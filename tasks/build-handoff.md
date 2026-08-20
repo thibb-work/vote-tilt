@@ -76,8 +76,8 @@ Plan file: `C:\Users\DT6505\.claude\plans\vast-dreaming-piglet.md` (approved).
    then check `/` and `/host` render, the dial responds to devtools sensor emulation, and a
    freeze on `/host` flips `/`.
    Note: `public.sessions` was reset to `frozen=false` after the API test — it is demo-ready.
-3. ~~**Private repo**~~ — **done.** <https://github.com/thibb-org/vote-tilt> (private, `main`).
-   Created under `Thibb-NJ`, then transferred to the `thibb-org` org so it is reachable from
+3. ~~**Private repo**~~ — **done.** <https://github.com/thibb-corp/vote-tilt> (private, `main`).
+   Created under `Thibb-NJ`, then transferred to the `thibb-corp` org so it is reachable from
    the user's other laptop. Local `origin` already points at the org URL.
 4. **Deploy** — Vercel CLI 59.1.4 is installed. Two things to know:
    - `vercel login` needs the CA bundle or it dies with `TypeError: fetch failed`:

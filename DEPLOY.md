@@ -5,7 +5,7 @@ Everything below runs on the Mac. Nothing here needs the Windows machine.
 ## 1. Clone
 
 ```bash
-git clone https://github.com/thibb-org/vote-tilt.git
+git clone https://github.com/thibb-corp/vote-tilt.git
 cd vote-tilt
 npm install
 ```
@@ -42,7 +42,7 @@ never reaches the database, so changing it needs no SQL.
 ```bash
 npm i -g vercel
 vercel login          # device-code flow, opens a browser
-vercel link           # scope: personal or thibb-org, project name: vote-tilt
+vercel link           # scope: personal or thibb-corp, project name: vote-tilt
 
 for k in NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_ANON_KEY HOST_DB_SECRET HOST_PASSCODE; do
   grep "^$k=" .env.local | cut -d= -f2- | vercel env add "$k" production
