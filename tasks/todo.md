@@ -37,7 +37,7 @@ Handoff and hard-won facts: `tasks/build-handoff.md`.
 
 | Check | Result |
 |---|---|
-| `npm test` (tilt math: wedges, dead zone, 200-sample jitter) | **7/7 pass** |
+| `npm test` — tilt math, presence tally, jsonb round-trip, label wrapping | **29/29 pass** |
 | `npm run lint`, `npx tsc --noEmit`, `npm run build` | clean |
 | Freeze / reset / options without host cookie | **401** on all three |
 | Wrong passcode / right passcode | 401 / 200 |
@@ -45,6 +45,8 @@ Handoff and hard-won facts: `tasks/build-handoff.md`.
 | Options validation (5 labels) | 400 "Six non-empty labels required" |
 | Security probes (wrong RPC secret, anon UPDATE, anon DELETE, `private` schema) | **8/8 pass** |
 | Session reset after testing | `frozen=false`, tallies cleared — demo-ready |
+| Supabase security advisors | 6 warnings, all three host RPCs — **accepted by design**, see review |
+| Both routes render at runtime | `/` 200 with the gate, `/host` 200 with the passcode form, zero server errors |
 
 ## Open
 
@@ -75,3 +77,29 @@ already displaying. That keeps what gets frozen identical to what the room just 
 **The one thing to watch on the day:** the host laptop must not be on Zscaler-managed
 corporate wifi. Phones on cellular are fine; the laptop needs a hotspot or guest wifi, or the
 host screen will sit at zero while the room tilts.
+
+---
+
+## Addendum — work done while deploy was blocked
+
+**Presence aggregation is now tested without a socket.** `aggregatePresence` moved out of
+the `useRoom` effect into `lib/presence.ts`, and `test/presence.test.ts` carries the same
+six assertions `scripts/check-presence.mjs` would have made. That script still cannot run
+on this network, but the logic it was written to protect is no longer untested.
+
+**Two real defects fixed in `wrapLabel`.** Labels are editable mid-demo, and anything past
+three lines was being dropped silently — no ellipsis, no warning. A word wider than the
+wedge was also never broken, so it spilled past the dial. Both are now covered. All six
+shipped labels fit at 12 chars, but two sit exactly on the three-line cap, so the silent
+path was one typed word away.
+
+**Supabase security advisors: 6 warnings, all accepted.** Every one is the same finding
+against `host_freeze`, `host_reset` and `host_set_options` — "public can execute a
+SECURITY DEFINER function". That is the design. The linter cannot see that each function
+calls `private.assert_host(p_secret)` and raises `42501` before touching anything, which
+the probe suite verifies. The alternative it suggests — a service-role key — is a strictly
+larger blast radius. Brute-forcing a 32-character random secret over HTTP is not a
+practical attack, and the only thing an attacker gains is the ability to reset a poll.
+
+**What is still unproven and cannot be proven here:** the dial responding to a real
+gyroscope, and a freeze landing on a phone. Both need the deployed HTTPS URL and a phone.
