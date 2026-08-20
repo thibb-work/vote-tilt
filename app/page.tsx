@@ -1,69 +1,106 @@
-import Image from "next/image";
-import styles from "./page.module.css";
+'use client';
 
-export default function Home() {
-  return (
-    <div className={styles.page}>
-      <main className={styles.main}>
-        <Image
-          className={styles.logo}
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className={styles.intro}>
-          <h1>
-            To get started, edit the{" "}
-            <code className={styles.code}>page.tsx</code> file.
-          </h1>
-          <p>
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className={styles.ctas}>
-          <a
-            className={styles.primary}
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className={styles.logo}
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className={styles.secondary}
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
+import { useEffect, useRef, useState } from 'react';
+import { ActivateGate } from '@/components/ActivateGate';
+import { Dial } from '@/components/Dial';
+import { WinnerVeil } from '@/components/WinnerVeil';
+import { FALLBACK_OPTIONS } from '@/lib/constants';
+import { createTiltTracker, type TiltReading } from '@/lib/tilt';
+import { talliesToCounts } from '@/lib/tally';
+import { useRoom } from '@/lib/useRoom';
+import { useSession } from '@/lib/useSession';
+
+const FLAT: TiltReading = { wedge: null, magnitude: 0, heading: null };
+
+export default function VotePage() {
+  const session = useSession();
+  const room = useRoom({ publish: true });
+
+  const [active, setActive] = useState(false);
+  const [reading, setReading] = useState<TiltReading>(FLAT);
+
+  const tracker = useRef(createTiltTracker());
+  const latest = useRef<TiltReading>(FLAT);
+
+  useEffect(() => {
+    if (!active) return;
+
+    const onOrientation = (event: DeviceOrientationEvent) => {
+      latest.current = tracker.current.update({ beta: event.beta, gamma: event.gamma });
+    };
+    window.addEventListener('deviceorientation', onOrientation, true);
+
+    // Sensors fire faster than the screen repaints, and re-rendering on every
+    // sample makes the dial stutter. Sample once per frame, and only commit
+    // state when something moved enough to be visible.
+    let frame = 0;
+    const tick = () => {
+      setReading((prev) => {
+        const next = latest.current;
+        const sameHeading =
+          prev.heading === null && next.heading === null
+            ? true
+            : prev.heading !== null &&
+              next.heading !== null &&
+              Math.abs(prev.heading - next.heading) < 0.8;
+
+        if (prev.wedge === next.wedge && sameHeading && Math.abs(prev.magnitude - next.magnitude) < 0.5) {
+          return prev;
+        }
+        return next;
+      });
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+
+    return () => {
+      window.removeEventListener('deviceorientation', onOrientation, true);
+      cancelAnimationFrame(frame);
+    };
+  }, [active]);
+
+  const { setWedge } = room;
+  useEffect(() => {
+    setWedge(active ? reading.wedge : null);
+  }, [active, reading.wedge, setWedge]);
+
+  if (!active) {
+    return (
+      <main className="stage">
+        <ActivateGate onReady={() => setActive(true)} />
       </main>
-    </div>
+    );
+  }
+
+  const options = session?.options ?? FALLBACK_OPTIONS;
+  const frozen = session?.frozen ?? false;
+
+  return (
+    <main className="stage">
+      <div className="dial-wrap">
+        <Dial
+          options={options}
+          counts={room.counts}
+          active={reading.wedge}
+          heading={reading.heading}
+          magnitude={reading.magnitude}
+          total={room.total}
+          showCounts
+        />
+      </div>
+
+      <div className="status-line">
+        <span className={`dot${room.status === 'live' ? '' : ' is-off'}`} />
+        {room.status === 'live'
+          ? reading.wedge === null
+            ? 'Flat — not voting'
+            : 'Vote counted'
+          : room.status === 'connecting'
+            ? 'Connecting'
+            : 'Connection lost'}
+      </div>
+
+      {frozen && <WinnerVeil options={options} counts={talliesToCounts(session?.frozen_tallies)} />}
+    </main>
   );
 }
