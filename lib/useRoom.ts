@@ -5,6 +5,7 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from './supabase/client';
 import { ROOM_CHANNEL } from './constants';
 import { WEDGE_COUNT } from './tilt';
+import { aggregatePresence, type PresenceEntry } from './presence';
 
 /** How often a phone is allowed to publish a changed wedge. */
 const PUBLISH_INTERVAL_MS = 120;
@@ -45,18 +46,9 @@ export function useRoom({ publish }: { publish: boolean }): Room {
     channelRef.current = channel;
 
     channel.on('presence', { event: 'sync' }, () => {
-      const state = channel.presenceState<{ wedge: number | null }>();
-      const next = zeros();
-      let present = 0;
-
-      for (const entries of Object.values(state)) {
-        const entry = entries[0];
-        if (!entry) continue;
-        present++;
-        const w = entry.wedge;
-        if (typeof w === 'number' && w >= 0 && w < WEDGE_COUNT) next[w]++;
-      }
-
+      const { counts: next, total: present } = aggregatePresence(
+        channel.presenceState<PresenceEntry>(),
+      );
       setCounts(next);
       setTotal(present);
     });

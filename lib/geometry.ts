@@ -34,25 +34,47 @@ export function sectorPath(
   ].join(' ');
 }
 
+/** A wedge has room for three lines of label and no more. */
+export const MAX_LABEL_LINES = 3;
+
 /**
  * Greedy wrap for wedge labels. SVG has no text flow, so lines are laid out as
  * tspans and the caller needs to know how many there are.
+ *
+ * Labels are editable mid-demo, so overflow is ellipsised rather than dropped --
+ * a host who types too much should see it on the dial, not discover afterwards
+ * that a word went missing.
  */
 export function wrapLabel(text: string, maxChars: number): string[] {
+  const cut = Math.max(1, maxChars - 1);
   const lines: string[] = [];
   let line = '';
 
-  for (const word of text.split(/\s+/)) {
-    if (!line) {
-      line = word;
-    } else if (line.length + 1 + word.length <= maxChars) {
-      line += ` ${word}`;
-    } else {
-      lines.push(line);
+  const flush = () => {
+    if (line) lines.push(line);
+    line = '';
+  };
+
+  for (let word of text.trim().split(/\s+/).filter(Boolean)) {
+    // A word wider than the wedge has to be broken, or it spills past the dial.
+    while (word.length > maxChars) {
+      flush();
+      lines.push(`${word.slice(0, cut)}-`);
+      word = word.slice(cut);
+    }
+    if (!line) line = word;
+    else if (line.length + 1 + word.length <= maxChars) line += ` ${word}`;
+    else {
+      flush();
       line = word;
     }
   }
-  if (line) lines.push(line);
+  flush();
 
-  return lines.slice(0, 3);
+  if (lines.length <= MAX_LABEL_LINES) return lines;
+
+  const kept = lines.slice(0, MAX_LABEL_LINES);
+  const last = kept[MAX_LABEL_LINES - 1];
+  kept[MAX_LABEL_LINES - 1] = `${last.slice(0, cut).trimEnd()}…`;
+  return kept;
 }

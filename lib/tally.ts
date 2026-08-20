@@ -1,4 +1,4 @@
-import { WEDGE_COUNT } from './tilt';
+import { WEDGE_COUNT } from './tilt.ts';
 
 /** jsonb comes back keyed by stringified wedge index. */
 export function talliesToCounts(tallies: Record<string, number> | null | undefined): number[] {
