@@ -31,7 +31,7 @@ Handoff and hard-won facts: `tasks/build-handoff.md`.
 - [x] **Host auth** — httpOnly cookie, constant-time compare, 12 h expiry.
 - [x] **Arcade pass** — Anton display face, six saturated hues, count-up numbers,
       slam-in winner reveal, `prefers-reduced-motion` honoured.
-- [x] **First commit + private repo** — <https://github.com/Thibb-NJ/vote-tilt>.
+- [x] **First commit + private repo** — <https://github.com/thibb-org/vote-tilt>.
 
 ## Verified
 

@@ -76,12 +76,18 @@ Plan file: `C:\Users\DT6505\.claude\plans\vast-dreaming-piglet.md` (approved).
    then check `/` and `/host` render, the dial responds to devtools sensor emulation, and a
    freeze on `/host` flips `/`.
    Note: `public.sessions` was reset to `frozen=false` after the API test — it is demo-ready.
-3. **`git init` + private repo** — create-next-app already ran `git init`; **no commit exists yet**.
-   Need: first commit, then `gh repo create Thibb-NJ/vote-tilt --private --source=. --push`.
-   `gh` is authed as `Thibb-NJ` with `repo` scope.
-4. **Deploy** — `npm i -g vercel`, then the **user** must run `! vercel login` (interactive,
-   cannot be done for them). Then link, push the 4 env vars, `vercel --prod`.
-5. **`tasks/todo.md`** — not written yet (budget hook blocked non-handoff writes).
+3. ~~**Private repo**~~ — **done.** <https://github.com/thibb-org/vote-tilt> (private, `main`).
+   Created under `Thibb-NJ`, then transferred to the `thibb-org` org so it is reachable from
+   the user's other laptop. Local `origin` already points at the org URL.
+4. **Deploy** — Vercel CLI 59.1.4 is installed. Two things to know:
+   - `vercel login` needs the CA bundle or it dies with `TypeError: fetch failed`:
+     `NODE_EXTRA_CA_CERTS="C:/Users/DT6505/.certs/corp-ca.pem" vercel login`
+     (bash, not PowerShell — the `!` prompt runs bash). It is a device-code flow.
+   - Login was **not completed** — the user deferred it to their other laptop.
+   After login: `vercel link`, push the 4 env vars from `.env.local` to Production, then
+   `vercel --prod`. Set `HOST_DB_SECRET` and `HOST_PASSCODE` as plain env vars (not
+   `NEXT_PUBLIC_`), or the host controls become public.
+5. ~~**`tasks/todo.md`**~~ — **done**, see that file for the full build log and review.
 6. **Phone test on the live URL** — the only test that really counts.
 
 ---
