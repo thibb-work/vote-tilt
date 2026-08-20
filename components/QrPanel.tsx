@@ -17,7 +17,7 @@ export function QrPanel() {
       margin: 1,
       width: 640,
       errorCorrectionLevel: 'M',
-      color: { dark: '#0a0612ff', light: '#ffffffff' },
+      color: { dark: '#2a211aff', light: '#fffdf9ff' },
     }).then(setSrc);
   }, [origin]);
 
