@@ -12,7 +12,13 @@ export async function POST(request: Request) {
 
   const { client, secret } = hostRpc();
   const { error } = await client.rpc('host_reset', { p_secret: secret });
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    // Postgres messages name functions and columns. The host has no use for
+    // that on a projector, and it is free reconnaissance if the screen is
+    // photographed, so it stays in the server log.
+    console.error(`${new URL(request.url).pathname} failed:`, error.message);
+    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+  }
 
   return NextResponse.json({ ok: true });
 }

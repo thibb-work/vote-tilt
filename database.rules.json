@@ -8,11 +8,11 @@
         ".validate": "$room.matches(/^[23456789bcdfghjkmnpqrstvwxz]{14}$/)",
 
         "phones": {
-          ".read": "$room.matches(/^[23456789bcdfghjkmnpqrstvwxz]{14}$/)",
+          ".read": "auth != null && $room.matches(/^[23456789bcdfghjkmnpqrstvwxz]{14}$/)",
 
           "$phone": {
-            ".write": "$room.matches(/^[23456789bcdfghjkmnpqrstvwxz]{14}$/)",
-            ".validate": "!newData.exists() || ($phone.length <= 48 && newData.hasChildren(['m','t']))",
+            ".write": "auth != null && $phone === auth.uid && $room.matches(/^[23456789bcdfghjkmnpqrstvwxz]{14}$/)",
+            ".validate": "!newData.exists() || newData.hasChildren(['m','t'])",
 
             "h": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() < 360" },
             "m": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 90" },
@@ -23,8 +23,8 @@
         },
 
         "tally": {
-          ".read": "$room.matches(/^[23456789bcdfghjkmnpqrstvwxz]{14}$/)",
-          ".write": "$room.matches(/^[23456789bcdfghjkmnpqrstvwxz]{14}$/)",
+          ".read": "auth != null && $room.matches(/^[23456789bcdfghjkmnpqrstvwxz]{14}$/)",
+          ".write": "auth != null && $room.matches(/^[23456789bcdfghjkmnpqrstvwxz]{14}$/)",
           ".validate": "newData.hasChildren(['c','n','t'])",
 
           "c": { ".validate": "newData.hasChildren()" },

@@ -2,6 +2,7 @@
 
 import { getApps, initializeApp, type FirebaseApp } from 'firebase/app';
 import { getDatabase, type Database } from 'firebase/database';
+import { getAuth, onAuthStateChanged, signInAnonymously, type Auth } from 'firebase/auth';
 
 /**
  * Positions ride Firebase RTDB rather than Supabase Realtime. Presence fan-out
@@ -18,6 +19,7 @@ const config = {
 };
 
 let db: Database | null = null;
+let uid: Promise<string> | null = null;
 
 export function roomDb(): Database {
   if (db) return db;
@@ -27,4 +29,40 @@ export function roomDb(): Database {
   const app: FirebaseApp = getApps()[0] ?? initializeApp(config);
   db = getDatabase(app);
   return db;
+}
+
+/**
+ * Every client signs in anonymously before it touches the database.
+ *
+ * The uid is what the rules pin a phone's node to, so a phone can only write
+ * where its own identity says it may -- without it, knowing the room path is
+ * enough to overwrite or delete anyone else's dot. Nobody is asked to log in;
+ * the sign-in is invisible and the account is thrown away with the tab.
+ *
+ * Memoised: one identity per page, reused by every caller.
+ */
+export function roomAuth(): Promise<string> {
+  if (uid) return uid;
+
+  const auth: Auth = getAuth(getApps()[0] ?? initializeApp(config));
+
+  uid = new Promise<string>((resolve, reject) => {
+    // A session may already exist in this browser, so watch for it before
+    // asking for a new one -- signing in twice would orphan the first node.
+    const stop = onAuthStateChanged(
+      auth,
+      (user) => {
+        if (!user) return;
+        stop();
+        resolve(user.uid);
+      },
+      (error) => {
+        stop();
+        reject(error);
+      },
+    );
+    signInAnonymously(auth).catch(reject);
+  });
+
+  return uid;
 }

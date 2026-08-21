@@ -11,7 +11,7 @@ import {
   remove,
   set,
 } from 'firebase/database';
-import { roomDb } from './firebase/client';
+import { roomAuth, roomDb } from './firebase/client';
 import { WEDGE_COUNT } from './tilt';
 import { countsFrom } from './tally';
 import type { PhoneReading } from './dots';
@@ -46,9 +46,11 @@ interface Wire {
 }
 
 /**
- * Positions live in RTDB at rooms/<roomId>/phones/<id>, one node per phone. The
+ * Positions live in RTDB at rooms/<roomId>/phones/<uid>, one node per phone. The
  * room id is minted per round by the host and travels only in the QR code, so
- * the path cannot be derived from the public bundle.
+ * the path cannot be derived from the public bundle; the node key is the
+ * phone's anonymous uid, so the rules can refuse a phone that reaches for
+ * somebody else's dot.
  *
  * The fan-out is deliberately asymmetric. If every phone watched every other
  * phone, thirty phones at three updates a second would be nine hundred
@@ -77,57 +79,64 @@ export function useRoom({ role, roomId }: { role: Role; roomId: string | null })
     // write and nothing to read. Stay disconnected rather than guessing a path.
     if (!roomId) return;
 
-    const db = roomDb();
-    const phonesPath = `rooms/${roomId}/phones`;
-    const tallyRef = ref(db, `rooms/${roomId}/tally`);
-
-    // A dropped socket is the failure that matters here: the previous transport
-    // went quiet while still claiming to be live, so the dial looked frozen with
-    // no way to tell. .info/connected is the authoritative signal.
-    const connRef = ref(db, '.info/connected');
-    const offConn = onValue(connRef, (snap) => {
-      setStatus(snap.val() === true ? 'live' : 'connecting');
-    });
-
+    let cancelled = false;
     const timers: ReturnType<typeof setInterval>[] = [];
-    const cleanups: (() => void)[] = [offConn];
+    const cleanups: (() => void)[] = [];
 
-    if (role === 'voter') {
-      const id = crypto.randomUUID();
-      const mine = ref(db, `${phonesPath}/${id}`);
-      void onDisconnect(mine).remove();
+    const connect = (identity: string) => {
+      const db = roomDb();
+      const phonesPath = `rooms/${roomId}/phones`;
+      const tallyRef = ref(db, `rooms/${roomId}/tally`);
 
-      let last = '';
-      timers.push(
-        setInterval(() => {
-          const { heading, magnitude } = pending.current;
-          const wire: Wire = {
-            m: Math.round(magnitude * 10) / 10,
-            t: Date.now(),
-          };
-          if (heading !== null) wire.h = Math.round(heading * 10) / 10;
-
-          // Skip the write when nothing moved, but never skip so long that the
-          // host ages this phone out -- hence the timestamp in the signature.
-          const sig = `${wire.h ?? 'flat'}:${wire.m}`;
-          const stale = Date.now() - (last ? Number(last.split('|')[1]) : 0) > STALE_MS / 2;
-          if (sig === last.split('|')[0] && !stale) return;
-          last = `${sig}|${Date.now()}`;
-
-          void set(mine, wire);
-        }, PUBLISH_INTERVAL_MS),
+      // A dropped socket is the failure that matters here: an earlier transport
+      // went quiet while still claiming to be live, so the dial looked frozen
+      // with no way to tell. .info/connected is the authoritative signal.
+      cleanups.push(
+        onValue(ref(db, '.info/connected'), (snap) => {
+          setStatus(snap.val() === true ? 'live' : 'connecting');
+        }),
       );
 
-      const offTally = onValue(tallyRef, (snap) => {
-        const v = snap.val() as { c?: number[]; n?: number } | null;
-        setCounts(Array.isArray(v?.c) && v.c.length === WEDGE_COUNT ? v.c : zeros());
-        setTotal(typeof v?.n === 'number' ? v.n : 0);
-      });
+      if (role === 'voter') {
+        // Keyed by uid, not a random id: the rules only accept a write whose
+        // node name matches the writer, so a phone cannot move anyone else.
+        const mine = ref(db, `${phonesPath}/${identity}`);
+        void onDisconnect(mine).remove();
 
-      cleanups.push(offTally, () => {
-        void remove(mine);
-      });
-    } else {
+        let last = '';
+        timers.push(
+          setInterval(() => {
+            const { heading, magnitude } = pending.current;
+            const wire: Wire = {
+              m: Math.round(magnitude * 10) / 10,
+              t: Date.now(),
+            };
+            if (heading !== null) wire.h = Math.round(heading * 10) / 10;
+
+            // Skip the write when nothing moved, but never skip so long that the
+            // host ages this phone out -- hence the timestamp in the signature.
+            const sig = `${wire.h ?? 'flat'}:${wire.m}`;
+            const stale = Date.now() - (last ? Number(last.split('|')[1]) : 0) > STALE_MS / 2;
+            if (sig === last.split('|')[0] && !stale) return;
+            last = `${sig}|${Date.now()}`;
+
+            void set(mine, wire);
+          }, PUBLISH_INTERVAL_MS),
+        );
+
+        cleanups.push(
+          onValue(tallyRef, (snap) => {
+            const v = snap.val() as { c?: number[]; n?: number } | null;
+            setCounts(Array.isArray(v?.c) && v.c.length === WEDGE_COUNT ? v.c : zeros());
+            setTotal(typeof v?.n === 'number' ? v.n : 0);
+          }),
+          () => {
+            void remove(mine);
+          },
+        );
+        return;
+      }
+
       // Child events rather than a whole-collection read: thirty phones each
       // updating three times a second would otherwise mean ninety full
       // deserialisations of the entire room every second.
@@ -143,11 +152,13 @@ export function useRoom({ role, roomId }: { role: Role; roomId: string | null })
         });
       };
 
-      const offAdd = onChildAdded(phonesRef, (s) => upsert(s.key, s.val()));
-      const offChg = onChildChanged(phonesRef, (s) => upsert(s.key, s.val()));
-      const offDel = onChildRemoved(phonesRef, (s) => {
-        if (s.key) live.delete(s.key);
-      });
+      cleanups.push(
+        onChildAdded(phonesRef, (s) => upsert(s.key, s.val())),
+        onChildChanged(phonesRef, (s) => upsert(s.key, s.val())),
+        onChildRemoved(phonesRef, (s) => {
+          if (s.key) live.delete(s.key);
+        }),
+      );
 
       // Commit to React once per frame instead of once per child event, so the
       // dots ease along smoothly rather than the room re-rendering ninety times
@@ -181,10 +192,21 @@ export function useRoom({ role, roomId }: { role: Role; roomId: string | null })
         }, TALLY_INTERVAL_MS),
       );
 
-      cleanups.push(offAdd, offChg, offDel, () => cancelAnimationFrame(frame));
-    }
+      cleanups.push(() => cancelAnimationFrame(frame));
+    };
+
+    // The rules refuse every read and write until an identity exists, so there
+    // is nothing worth setting up before the sign-in lands.
+    roomAuth()
+      .then((identity) => {
+        if (!cancelled) connect(identity);
+      })
+      .catch(() => {
+        if (!cancelled) setStatus('error');
+      });
 
     return () => {
+      cancelled = true;
       timers.forEach(clearInterval);
       cleanups.forEach((fn) => fn());
     };
