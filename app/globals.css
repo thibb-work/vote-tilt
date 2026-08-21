@@ -268,16 +268,74 @@ body {
 .host {
   min-height: 100dvh;
   display: grid;
-  grid-template-columns: minmax(240px, 22vw) 1fr;
+  grid-template-columns: minmax(220px, 18vw) minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
   gap: clamp(16px, 2vw, 40px);
   padding: clamp(16px, 2.2vw, 40px);
   padding-bottom: 88px;
+}
+
+@media (max-width: 1200px) {
+  .host {
+    grid-template-columns: minmax(200px, 26vw) 1fr;
+  }
+  .host-dial {
+    grid-column: 1 / -1;
+    order: 2;
+  }
 }
 
 @media (max-width: 900px) {
   .host {
     grid-template-columns: 1fr;
   }
+}
+
+/* The host sees exactly what the room sees, plus a dot for every phone in it. */
+.host-dial {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+}
+
+.host-dial .dial {
+  width: 100%;
+  max-width: min(52vh, 560px);
+  height: auto;
+}
+
+/* Dots ease between published positions rather than teleporting, so thirty
+   phones read as a moving crowd instead of a strobing scatter. */
+.dot-phone {
+  transition: cx 0.28s linear, cy 0.28s linear, r 0.2s ease, fill 0.3s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dot-phone {
+    transition: none;
+  }
+}
+
+.host-error {
+  margin: 0 auto 76px;
+  width: fit-content;
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: rgba(255, 59, 107, 0.12);
+  border: 1px solid rgba(255, 59, 107, 0.4);
+  color: #a3123c;
+  font-size: 14px;
+}
+
+/* The phone is a pointer, never a commitment -- say so, so a laggy frame is
+   not mistaken for a vote that already landed. */
+.status-hint {
+  margin: 6px auto 0;
+  max-width: 30ch;
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--muted);
 }
 
 .join-card {

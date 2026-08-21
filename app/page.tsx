@@ -14,7 +14,7 @@ const FLAT: TiltReading = { wedge: null, magnitude: 0, heading: null };
 
 export default function VotePage() {
   const session = useSession();
-  const room = useRoom({ publish: true });
+  const room = useRoom({ role: 'voter' });
 
   const [active, setActive] = useState(false);
   const [reading, setReading] = useState<TiltReading>(FLAT);
@@ -59,10 +59,16 @@ export default function VotePage() {
     };
   }, [active]);
 
-  const { setWedge } = room;
+  const { publish } = room;
+  const frozen = session?.frozen ?? false;
+
+  // Keep streaming while the round is open, whatever the phone is doing. A
+  // phone never commits to anything -- it is a live pointer until the host
+  // freezes, and freezing is what turns the last position into a vote.
   useEffect(() => {
-    setWedge(active ? reading.wedge : null);
-  }, [active, reading.wedge, setWedge]);
+    if (!active || frozen) return;
+    publish(reading.heading, reading.magnitude);
+  }, [active, frozen, reading.heading, reading.magnitude, publish]);
 
   if (!active) {
     return (
@@ -73,14 +79,15 @@ export default function VotePage() {
   }
 
   const options = session?.options ?? FALLBACK_OPTIONS;
-  const frozen = session?.frozen ?? false;
+  const frozenCounts = talliesToCounts(session?.frozen_tallies);
+  const aiming = reading.wedge !== null ? options[reading.wedge] : null;
 
   return (
     <main className="stage">
       <div className="dial-wrap">
         <Dial
           options={options}
-          counts={room.counts}
+          counts={frozen ? frozenCounts : room.counts}
           active={reading.wedge}
           heading={reading.heading}
           magnitude={reading.magnitude}
@@ -91,16 +98,20 @@ export default function VotePage() {
 
       <div className="status-line">
         <span className={`dot${room.status === 'live' ? '' : ' is-off'}`} />
-        {room.status === 'live'
-          ? reading.wedge === null
-            ? 'Flat — not voting'
-            : 'Vote counted'
-          : room.status === 'connecting'
-            ? 'Connecting'
-            : 'Connection lost'}
+        {room.status !== 'live'
+          ? 'Reconnecting'
+          : frozen
+            ? 'Round closed'
+            : aiming
+              ? `Aiming at ${aiming}`
+              : 'Level — aiming at nothing'}
       </div>
 
-      {frozen && <WinnerVeil options={options} counts={talliesToCounts(session?.frozen_tallies)} />}
+      {!frozen && (
+        <p className="status-hint">Tilt freely. The host closes the round from the main screen.</p>
+      )}
+
+      {frozen && <WinnerVeil options={options} counts={frozenCounts} />}
     </main>
   );
 }

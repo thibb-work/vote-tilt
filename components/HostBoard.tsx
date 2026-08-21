@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { CountUp } from './CountUp';
+import { Dial } from './Dial';
 import { OptionsEditor } from './OptionsEditor';
 import { QrPanel } from './QrPanel';
 import { WEDGE_COLORS, FALLBACK_OPTIONS } from '@/lib/constants';
@@ -11,11 +12,13 @@ import { useSession } from '@/lib/useSession';
 
 export function HostBoard() {
   const session = useSession();
-  // publish: false -- the host watches the room without joining the tally.
-  const room = useRoom({ publish: false });
+  // The host watches every phone individually and never publishes a position of
+  // its own, so it can draw the room without appearing in it.
+  const room = useRoom({ role: 'host' });
 
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const options = session?.options ?? FALLBACK_OPTIONS;
   const frozen = session?.frozen ?? false;
@@ -27,12 +30,21 @@ export function HostBoard() {
 
   async function post(path: string, body?: unknown) {
     setBusy(true);
-    await fetch(path, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body ?? {}),
-    });
-    setBusy(false);
+    setError(null);
+    try {
+      const res = await fetch(path, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body ?? {}),
+      });
+      // A silent failure here is the worst case: the room believes it is locked
+      // while the round is still open, so surface it on the projector instead.
+      if (!res.ok) setError(`${path.split('/').pop()} failed (${res.status})`);
+    } catch {
+      setError('Network error');
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -40,12 +52,25 @@ export function HostBoard() {
       <div className="host">
         <QrPanel />
 
+        <div className="host-dial">
+          <Dial
+            options={options}
+            counts={counts}
+            active={null}
+            heading={null}
+            magnitude={0}
+            total={room.total}
+            showCounts
+            readings={frozen ? [] : room.readings}
+          />
+        </div>
+
         <section className="tally">
           <div className="tally-head">
-            <h1>{frozen ? 'Frozen' : 'Tilt to vote'}</h1>
+            <h1>{frozen ? 'Locked' : 'Tilt to vote'}</h1>
             <div className="status-line">
               <span className={`dot${room.status === 'live' ? '' : ' is-off'}`} />
-              {room.total} {room.total === 1 ? 'phone' : 'phones'} · {voted} voting
+              {room.total} {room.total === 1 ? 'phone' : 'phones'} · {voted} aiming
             </div>
           </div>
 
@@ -67,6 +92,8 @@ export function HostBoard() {
         </section>
       </div>
 
+      {error && <p className="host-error">{error}</p>}
+
       <div className="controls">
         {frozen ? (
           <button
@@ -74,7 +101,7 @@ export function HostBoard() {
             disabled={busy}
             onClick={() => post('/api/host/reset')}
           >
-            Reset round
+            Reopen round
           </button>
         ) : (
           <button
@@ -82,7 +109,7 @@ export function HostBoard() {
             disabled={busy}
             onClick={() => post('/api/host/freeze', { tallies: countsToTallies(room.counts) })}
           >
-            Freeze
+            Lock votes
           </button>
         )}
         <button className="ctl" disabled={busy || frozen} onClick={() => setEditing(true)}>

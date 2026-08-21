@@ -18,6 +18,18 @@
 
             "$other": { ".validate": false }
           }
+        },
+
+        "tally": {
+          ".read": true,
+          ".write": true,
+          ".validate": "newData.hasChildren(['c','n','t'])",
+
+          "c": { ".validate": "newData.hasChildren()" },
+          "n": { ".validate": "newData.isNumber() && newData.val() >= 0" },
+          "t": { ".validate": "newData.isNumber() && newData.val() <= now + 5000" },
+
+          "$other": { ".validate": false }
         }
       }
     }

@@ -4,6 +4,7 @@ import { polar, sectorPath, wrapLabel } from '@/lib/geometry';
 import { WEDGE_COLORS } from '@/lib/constants';
 import { WEDGE_COUNT, WEDGE_DEG } from '@/lib/tilt';
 import { fillFor, needsLightText } from '@/lib/density';
+import { dotsFor, type PhoneReading } from '@/lib/dots';
 
 const INK = '#2a211a';
 const INK_INVERSE = '#fdfaf5';
@@ -24,6 +25,8 @@ export interface DialProps {
   magnitude: number;
   total: number;
   showCounts: boolean;
+  /** host view: one dot per phone, drawn where that phone is pointing */
+  readings?: PhoneReading[];
 }
 
 export function Dial({
@@ -34,6 +37,7 @@ export function Dial({
   magnitude,
   total,
   showCounts,
+  readings,
 }: DialProps) {
   // The needle rides from the hub edge outward in proportion to how hard the
   // phone is tilted, so a gentle lean reads differently from a firm commit.
@@ -137,6 +141,23 @@ export function Dial({
       >
         {total === 1 ? 'PHONE' : 'PHONES'}
       </text>
+
+      {readings && readings.length > 0 && (
+        <g className="dots">
+          {dotsFor(readings, CX, CY, R_INNER, R_OUTER - 16).map((d) => (
+            <circle
+              key={d.id}
+              className="dot-phone"
+              cx={d.x}
+              cy={d.y}
+              r={d.flat ? 4 : 6}
+              fill={d.flat ? 'rgba(42,33,26,0.28)' : INK}
+              stroke={HUB}
+              strokeWidth={1.5}
+            />
+          ))}
+        </g>
+      )}
 
       {needle && (
         <>
