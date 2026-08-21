@@ -1,22 +1,25 @@
 import { NextResponse } from 'next/server';
-import { isHost } from '@/lib/hostAuth';
+import { isHost, sameOrigin } from '@/lib/hostAuth';
 import { hostRpc } from '@/lib/supabase/server';
+import { parseTallies } from '@/lib/tally';
 
 /**
- * Tallies come from the host's browser because live votes live in Realtime
- * Presence, which the database cannot see. The cookie check is what makes that
- * safe to trust.
+ * Tallies come from the host's browser because live positions ride RTDB, which
+ * the database cannot see. The cookie says who is asking; parseTallies says
+ * whether what they sent is a tally at all.
  */
 export async function POST(request: Request) {
+  if (!sameOrigin(request)) {
+    return NextResponse.json({ error: 'Bad origin' }, { status: 403 });
+  }
   if (!(await isHost())) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const { tallies } = (await request.json().catch(() => ({}))) as {
-    tallies?: Record<string, number>;
-  };
-  if (!tallies || typeof tallies !== 'object') {
-    return NextResponse.json({ error: 'Missing tallies' }, { status: 400 });
+  const body = (await request.json().catch(() => ({}))) as { tallies?: unknown };
+  const tallies = parseTallies(body.tallies);
+  if (!tallies) {
+    return NextResponse.json({ error: 'Malformed tallies' }, { status: 400 });
   }
 
   const { client, secret } = hostRpc();

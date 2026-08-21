@@ -1,8 +1,11 @@
 import { NextResponse } from 'next/server';
-import { isHost } from '@/lib/hostAuth';
+import { isHost, sameOrigin } from '@/lib/hostAuth';
 import { hostRpc } from '@/lib/supabase/server';
 
-export async function POST() {
+export async function POST(request: Request) {
+  if (!sameOrigin(request)) {
+    return NextResponse.json({ error: 'Bad origin' }, { status: 403 });
+  }
   if (!(await isHost())) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }

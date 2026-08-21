@@ -19,3 +19,6 @@ export const FALLBACK_OPTIONS = [
   'Animated website',
   'Automated data extraction',
 ];
+
+/** Longest option label the dial can render without the text overrunning its wedge. */
+export const MAX_OPTION_LEN = 48;

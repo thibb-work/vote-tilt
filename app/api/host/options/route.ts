@@ -1,8 +1,12 @@
 import { NextResponse } from 'next/server';
-import { isHost } from '@/lib/hostAuth';
+import { isHost, sameOrigin } from '@/lib/hostAuth';
 import { hostRpc } from '@/lib/supabase/server';
+import { MAX_OPTION_LEN } from '@/lib/constants';
 
 export async function POST(request: Request) {
+  if (!sameOrigin(request)) {
+    return NextResponse.json({ error: 'Bad origin' }, { status: 403 });
+  }
   if (!(await isHost())) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
@@ -11,9 +15,14 @@ export async function POST(request: Request) {
   if (
     !Array.isArray(options) ||
     options.length !== 6 ||
-    options.some((o) => typeof o !== 'string' || o.trim() === '')
+    options.some(
+      (o) => typeof o !== 'string' || o.trim() === '' || o.trim().length > MAX_OPTION_LEN,
+    )
   ) {
-    return NextResponse.json({ error: 'Six non-empty labels required' }, { status: 400 });
+    return NextResponse.json(
+      { error: `Six non-empty labels, each at most ${MAX_OPTION_LEN} characters` },
+      { status: 400 },
+    );
   }
 
   const { client, secret } = hostRpc();
