@@ -12,7 +12,6 @@ import {
   set,
 } from 'firebase/database';
 import { roomDb } from './firebase/client';
-import { SESSION_SLUG } from './constants';
 import { WEDGE_COUNT } from './tilt';
 import { countsFrom } from './tally';
 import type { PhoneReading } from './dots';
@@ -47,7 +46,9 @@ interface Wire {
 }
 
 /**
- * Positions live in RTDB at rooms/<slug>/phones/<id>, one node per phone.
+ * Positions live in RTDB at rooms/<roomId>/phones/<id>, one node per phone. The
+ * room id is minted per round by the host and travels only in the QR code, so
+ * the path cannot be derived from the public bundle.
  *
  * The fan-out is deliberately asymmetric. If every phone watched every other
  * phone, thirty phones at three updates a second would be nine hundred
@@ -60,7 +61,7 @@ interface Wire {
  * publishing until the host freezes the round; the freeze is what turns live
  * positions into a result.
  */
-export function useRoom({ role }: { role: Role }): Room {
+export function useRoom({ role, roomId }: { role: Role; roomId: string | null }): Room {
   const [counts, setCounts] = useState<number[]>(zeros);
   const [total, setTotal] = useState(0);
   const [status, setStatus] = useState<RoomStatus>('connecting');
@@ -72,9 +73,13 @@ export function useRoom({ role }: { role: Role }): Room {
   });
 
   useEffect(() => {
+    // No room id means no QR was scanned, so there is nowhere legitimate to
+    // write and nothing to read. Stay disconnected rather than guessing a path.
+    if (!roomId) return;
+
     const db = roomDb();
-    const phonesPath = `rooms/${SESSION_SLUG}/phones`;
-    const tallyRef = ref(db, `rooms/${SESSION_SLUG}/tally`);
+    const phonesPath = `rooms/${roomId}/phones`;
+    const tallyRef = ref(db, `rooms/${roomId}/tally`);
 
     // A dropped socket is the failure that matters here: the previous transport
     // went quiet while still claiming to be live, so the dial looked frozen with
@@ -183,7 +188,7 @@ export function useRoom({ role }: { role: Role }): Room {
       timers.forEach(clearInterval);
       cleanups.forEach((fn) => fn());
     };
-  }, [role]);
+  }, [role, roomId]);
 
   const publish = useCallback((heading: number | null, magnitude: number) => {
     pending.current = { heading, magnitude };

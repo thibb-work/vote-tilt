@@ -582,3 +582,13 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* The join code is deliberately not shown as text -- it is the only thing
+   keeping a public database URL from being a public ballot box. */
+.join-note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+  text-align: center;
+}

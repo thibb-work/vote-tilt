@@ -4,12 +4,14 @@
     ".write": false,
 
     "rooms": {
-      "main": {
+      "$room": {
+        ".validate": "$room.matches(/^[23456789bcdfghjkmnpqrstvwxz]{14}$/)",
+
         "phones": {
-          ".read": true,
+          ".read": "$room.matches(/^[23456789bcdfghjkmnpqrstvwxz]{14}$/)",
 
           "$phone": {
-            ".write": true,
+            ".write": "$room.matches(/^[23456789bcdfghjkmnpqrstvwxz]{14}$/)",
             ".validate": "!newData.exists() || ($phone.length <= 48 && newData.hasChildren(['m','t']))",
 
             "h": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() < 360" },
@@ -21,8 +23,8 @@
         },
 
         "tally": {
-          ".read": true,
-          ".write": true,
+          ".read": "$room.matches(/^[23456789bcdfghjkmnpqrstvwxz]{14}$/)",
+          ".write": "$room.matches(/^[23456789bcdfghjkmnpqrstvwxz]{14}$/)",
           ".validate": "newData.hasChildren(['c','n','t'])",
 
           "c": { ".validate": "newData.hasChildren()" },
@@ -30,7 +32,9 @@
           "t": { ".validate": "newData.isNumber() && newData.val() <= now + 5000" },
 
           "$other": { ".validate": false }
-        }
+        },
+
+        "$other": { ".validate": false }
       }
     }
   }

@@ -8,13 +8,25 @@ import { FALLBACK_OPTIONS } from '@/lib/constants';
 import { createTiltTracker, type TiltReading } from '@/lib/tilt';
 import { talliesToCounts } from '@/lib/tally';
 import { useRoom } from '@/lib/useRoom';
+import { isRoomId, ROOM_QUERY_KEY } from '@/lib/room';
+import { useClientValue } from '@/lib/useClientValue';
 import { useSession } from '@/lib/useSession';
 
 const FLAT: TiltReading = { wedge: null, magnitude: 0, heading: null };
 
 export default function VotePage() {
   const session = useSession();
-  const room = useRoom({ role: 'voter' });
+
+  // The room id arrives in the QR link and nowhere else, so a phone that did not
+  // scan has no path to write to. Read it straight off the URL rather than
+  // through useSearchParams, which would force this page out of static rendering.
+  const roomId = useClientValue(
+    () => new URLSearchParams(window.location.search).get(ROOM_QUERY_KEY),
+    null as string | null,
+  );
+  const joined = isRoomId(roomId) ? roomId : null;
+
+  const room = useRoom({ role: 'voter', roomId: joined });
 
   const [active, setActive] = useState(false);
   const [reading, setReading] = useState<TiltReading>(FLAT);
@@ -69,6 +81,20 @@ export default function VotePage() {
     if (!active || frozen) return;
     publish(reading.heading, reading.magnitude);
   }, [active, frozen, reading.heading, reading.magnitude, publish]);
+
+  if (!joined) {
+    return (
+      <main className="stage">
+        <div className="gate">
+          <h1>Scan to join</h1>
+          <p>
+            This round has its own join link. Point your camera at the QR code on the
+            main screen to take part.
+          </p>
+        </div>
+      </main>
+    );
+  }
 
   if (!active) {
     return (

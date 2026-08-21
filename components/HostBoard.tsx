@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import { CountUp } from './CountUp';
 import { Dial } from './Dial';
 import { OptionsEditor } from './OptionsEditor';
@@ -9,12 +9,18 @@ import { WEDGE_COLORS, FALLBACK_OPTIONS } from '@/lib/constants';
 import { countsToTallies, leaders, talliesToCounts } from '@/lib/tally';
 import { useRoom } from '@/lib/useRoom';
 import { useSession } from '@/lib/useSession';
+import { hostRoomIdSnapshot, retireHostRoomId, subscribeHostRoomId } from '@/lib/room';
 
 export function HostBoard() {
   const session = useSession();
+
+  // Null on the server: there is no room id until a browser mints one, and one
+  // that appeared in server-rendered HTML would defeat the point of having it.
+  const roomId = useSyncExternalStore(subscribeHostRoomId, hostRoomIdSnapshot, () => null);
+
   // The host watches every phone individually and never publishes a position of
   // its own, so it can draw the room without appearing in it.
-  const room = useRoom({ role: 'host' });
+  const room = useRoom({ role: 'host', roomId });
 
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -50,7 +56,7 @@ export function HostBoard() {
   return (
     <>
       <div className="host">
-        <QrPanel />
+        <QrPanel roomId={roomId} />
 
         <div className="host-dial">
           <Dial
@@ -114,6 +120,14 @@ export function HostBoard() {
         )}
         <button className="ctl" disabled={busy || frozen} onClick={() => setEditing(true)}>
           Edit options
+        </button>
+        <button
+          className="ctl"
+          disabled={busy}
+          title="Mint a new join code. Everyone currently connected drops out."
+          onClick={retireHostRoomId}
+        >
+          New QR
         </button>
       </div>
 
