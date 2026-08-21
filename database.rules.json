@@ -1,0 +1,25 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+
+    "rooms": {
+      "main": {
+        "phones": {
+          ".read": true,
+
+          "$phone": {
+            ".write": true,
+            ".validate": "!newData.exists() || ($phone.length <= 48 && newData.hasChildren(['m','t']))",
+
+            "h": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() < 360" },
+            "m": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 90" },
+            "t": { ".validate": "newData.isNumber() && newData.val() <= now + 5000" },
+
+            "$other": { ".validate": false }
+          }
+        }
+      }
+    }
+  }
+}
