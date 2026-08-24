@@ -1,6 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 import { toSessionRow } from '../lib/session.ts';
+import { talliesToCounts } from '../lib/tally.ts';
 
 const OPTIONS = ['a', 'b', 'c', 'd', 'e', 'f'];
 
@@ -65,4 +66,18 @@ test('missing timestamps read as empty rather than undefined', () => {
   const row = toSessionRow({ options: OPTIONS });
   assert.equal(row?.round_started, '');
   assert.equal(row?.updated_at, '');
+});
+
+test('tallies RTDB turned into an array still read correctly', () => {
+  // parseTallies pads to six sequential keys, and RTDB stores an object whose
+  // keys are 0..n as a JSON array. Indexing by string still works, so the
+  // consumer is unaffected -- but the shape really does come back as an array.
+  const row = toSessionRow({
+    options: OPTIONS,
+    frozen: true,
+    frozen_tallies: [4, 0, 2, 0, 0, 0],
+  });
+  assert.equal(talliesToCounts(row?.frozen_tallies)[0], 4);
+  assert.equal(talliesToCounts(row?.frozen_tallies)[2], 2);
+  assert.equal(talliesToCounts(row?.frozen_tallies)[1], 0);
 });
