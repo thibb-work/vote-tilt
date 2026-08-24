@@ -94,3 +94,50 @@ a network that permits WebSockets to Supabase:
 set -a; . ./.env.local; set +a
 node scripts/check-presence.mjs
 ```
+
+## The demo page (`/demo`)
+
+`https://vote-tilt.vercel.app/demo` exists for one reason: opening the bare URL
+without a QR code shows a "Scan to join" wall, which makes a working product look
+broken to anyone who just followed the link. `/demo` is the way out of that dead
+end, and the empty state now links to it.
+
+It is a **single-visitor page, not a second host console**. There is no room, no
+QR code, no host, and no cap, because nobody else joins it:
+
+- the surrounding phones are simulated in `lib/demoRoom.ts` — pure arithmetic on
+  a timer, stated on the page so nobody mistakes them for live votes;
+- it opens no socket. Nothing on this page touches Firebase or Supabase, so it
+  cannot affect the round `/host` drives and keeps working if either is down;
+- the six labels are `FALLBACK_OPTIONS`.
+
+**It has to work on a laptop.** The people it exists for have usually just opened
+the URL on whatever they were already using, and `ActivateGate` refuses outright
+without a motion sensor — which would send them back to the same dead end. So a
+pointer drives the needle by default, and a real gyroscope takes over on its own
+where the hardware offers one. On iOS, where the sensor needs a gesture, a "Use my
+phone’s tilt" button appears.
+
+`pointerToReading` maps distance from the hub onto the same 15° dead zone the real
+dial uses, so what the demo teaches matches what a phone does.
+
+Nothing here needs deploying beyond `vercel --prod`. There are no database rules
+involved.
+
+### Rotating the host passcode
+
+`scripts/rotate-secrets.sh` mints both secrets and pushes them. To change only
+the passcode, edit `HOST_PASSCODE` in `.env.local` and push it without letting
+the value reach the terminal:
+
+```bash
+set -a; . ./.env.local; set +a
+for e in production preview development; do
+  vercel env rm HOST_PASSCODE "$e" --yes >/dev/null 2>&1
+  printf '%s' "$HOST_PASSCODE" | vercel env add HOST_PASSCODE "$e"
+done
+vercel --prod        # env changes only take effect on a new deployment
+```
+
+`HOST_DB_SECRET` is independent and must keep matching `private.host_config`;
+changing it needs the SQL in section 2.

@@ -91,6 +91,11 @@ export default function VotePage() {
             This round has its own join link. Point your camera at the QR code on the
             main screen to take part.
           </p>
+          {/* Without this, opening the bare URL is a dead end and the product
+              looks broken to anyone who simply followed the link. */}
+          <a className="gate-link" href="/demo">
+            Or try it without a round &rarr;
+          </a>
         </div>
       </main>
     );

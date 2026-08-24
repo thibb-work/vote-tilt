@@ -592,3 +592,37 @@ body {
   color: var(--muted);
   text-align: center;
 }
+
+/* ---------- demo ---------- */
+
+/* The dots on /demo are invented, and the page says so out loud. A demo that
+   passed simulated phones off as a live room would misrepresent the one thing
+   the product is for. */
+.demo-note {
+  margin: 0 auto;
+  max-width: 46ch;
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+/* Unlike the host controls, these do not hide until hover -- a visitor who has
+   just landed has no reason to go hunting for them. */
+.demo-controls {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+/* The way out of the "Scan to join" dead end. */
+.gate-link {
+  display: inline-block;
+  margin-top: 4px;
+  color: var(--ink);
+  font-size: 14px;
+  text-underline-offset: 4px;
+}

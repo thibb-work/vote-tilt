@@ -103,3 +103,82 @@ practical attack, and the only thing an attacker gains is the ability to reset a
 
 **What is still unproven and cannot be proven here:** the dial responding to a real
 gyroscope, and a freeze landing on a phone. Both need the deployed HTTPS URL and a phone.
+
+---
+
+## Addendum — host passcode and the demo page (2026-08-23)
+
+**Passcode pushed.** `HOST_PASSCODE` from `.env.local` is in all three Vercel
+environments and live in production (the new value returns 200 on
+`/api/host/login`, a wrong one 401). `HOST_DB_SECRET` was deliberately **not**
+touched — unchanged since the 21 Aug rotation and confirmed still accepted by the
+database via an idempotent `host_set_options` that rewrote the existing labels to
+themselves, so Vercel’s copy was already correct.
+
+**`/demo` added** — a single-visitor page that answers "the bare URL shows
+nothing without a QR code". A dial that is already moving, a needle the visitor
+drives themselves, and one control that toggles the rest of the room in and out.
+The surrounding phones are
+simulated in `lib/demoRoom.ts` and the page says so. It opens no socket at all:
+no Firebase, no Supabase, so it cannot touch the round `/host` drives. The
+"Scan to join" empty state now links to it, which is the whole point.
+
+## Review
+
+**I built the wrong thing first, and it cost a full cycle.** "Demo" was read as a
+passwordless *host console* — QR panel, big screen, lock, and a five-phone cap
+enforced by Realtime Database rules. That was designed, built, verified against the
+live database and deployed before the user said what they actually wanted: a page
+that shows a visitor what the product does, with no host involved. All of it was
+reverted, database rules included. Recorded in `tasks/lessons.md`.
+
+**What replaced it is much smaller.** No rooms, no rules, no cap — there is nobody
+to cap, because nobody else joins. `lib/demoRoom.ts` is pure arithmetic with the
+randomness injected, so the drift is unit-tested without a browser and without
+waiting for real seconds to pass.
+
+**The demo has to work on a laptop.** This is the detail that decides whether the
+page does its job. Whoever lands on the bare URL is usually on the machine they
+were already using, and `ActivateGate` refuses without a motion sensor — which
+would drop them back at the same dead end the page exists to fix. So the pointer
+drives the needle by default and a gyroscope takes over on its own where there is
+one. `pointerToReading` maps distance from the hub onto the real 15° dead zone, so
+the demo teaches the real behaviour rather than an approximation of it.
+
+**Verified:** 64/64 unit tests (9 new, covering drift, range safety over 2000 steps,
+flat phones landing in the hub, and the pointer compass against all six wedges);
+lint, typecheck and build clean; `/demo` and the `/` link render in production.
+
+Not verifiable here: how the drift *feels*, and a real gyroscope driving it. Both
+need eyes on the deployed page.
+
+## Open
+
+- [ ] **Look at `/demo` and judge the pace.** `SIM_PHONE_COUNT`, `EASE`,
+      `MIN_DWELL_MS`/`MAX_DWELL_MS` and `ABSTAIN_CHANCE` in `lib/demoRoom.ts` are
+      the dials to turn if the room feels too busy, too fast or too static.
+- [ ] **Preview deployments are broken** — `NEXT_PUBLIC_SUPABASE_URL` and
+      `NEXT_PUBLIC_SUPABASE_ANON_KEY` exist only in Production, so preview builds
+      error. Unrelated to this work; `/demo` is unaffected since it reads neither.
+- [ ] **Host passcode is in the 2026-08-23 session transcript** — leaked by a shell
+      parse failure that echoed the command. Left in place by decision; the recipe
+      to rotate it is in `DEPLOY.md`.
+
+### Follow-up (2026-08-24) — the demo controls
+
+The winner reveal is gone from `/demo`: "Lock votes" was replaced by a single toggle
+that turns the simulated room on and off. Its label says what pressing it does —
+**Just me** while the room is running, **Simulate other users** once it is off — so
+the control is never a no-op whichever state the page is in.
+
+Granting motion access now clears the dial down to one phone. Someone who has just
+tapped **Use my phone's tilt** is trying to see what their own handset does, and
+picking their needle out of eleven other dots works against that.
+
+The automatic path is deliberately different. On Android, tilt is detected from the
+first real sample without anyone asking for it, and there the room keeps running —
+dots vanishing a moment after landing would read as a glitch rather than a choice.
+Only the explicit tap clears the dial.
+
+`WinnerVeil` is still used by the real voter screen, so nothing was orphaned. Say the
+word if the reveal should come back to the demo as a third control.
