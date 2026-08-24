@@ -12,39 +12,35 @@ npm install
 
 ## 2. Environment
 
-Four variables. Copy `.env.example` to `.env.local` and fill it in:
+Copy `.env.example` to `.env.local` and fill it in:
 
 | Variable | Where it comes from |
 |---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` | `https://bxgjkzlrncmvvcgiqyhm.supabase.co` |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase dashboard → Project Settings → API keys → publishable |
-| `HOST_DB_SECRET` | must match `private.host_config.secret` (see below) |
+| `NEXT_PUBLIC_FIREBASE_*` | Firebase console → Project settings → your web app |
+| `FIREBASE_SERVICE_ACCOUNT` | Firebase console → Project settings → Service accounts → Generate new private key, as one line of JSON |
+| `HOST_TOKEN_SECRET` | anything long and random — it salts the host cookie |
 | `HOST_PASSCODE` | anything you like — it is what you type on `/host` |
 
-`HOST_DB_SECRET` and `HOST_PASSCODE` are **not** `NEXT_PUBLIC_`. If either
-picks up that prefix it ships to every phone in the room and the freeze
-controls stop being yours.
+`FIREBASE_SERVICE_ACCOUNT`, `HOST_TOKEN_SECRET` and `HOST_PASSCODE` are **not**
+`NEXT_PUBLIC_`. The service account is the whole database; the other two are
+the freeze controls. If any of them picks up that prefix it ships to every
+phone in the room.
 
-If you would rather not carry the old secret across machines, pick a new one
-and tell the database about it:
-
-```sql
--- Supabase dashboard → SQL editor
-insert into private.host_config (slug, secret) values ('main', '<new secret>')
-on conflict (slug) do update set secret = excluded.secret;
-```
-
-Then put the same value in `HOST_DB_SECRET`. The passcode is independent — it
-never reaches the database, so changing it needs no SQL.
+The passcode and the salt are independent of the database, so changing either
+needs no migration — the host cookie simply stops matching and everyone signs
+in again.
 
 ## 3. Deploy
 
 ```bash
 npm i -g vercel
 vercel login          # device-code flow, opens a browser
-vercel link           # scope: personal or thibb-corp, project name: vote-tilt
+vercel link           # scope: thibb-work, project name: vote-tilt
 
-for k in NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_ANON_KEY HOST_DB_SECRET HOST_PASSCODE; do
+for k in NEXT_PUBLIC_FIREBASE_API_KEY NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN \
+         NEXT_PUBLIC_FIREBASE_DATABASE_URL NEXT_PUBLIC_FIREBASE_PROJECT_ID \
+         NEXT_PUBLIC_FIREBASE_APP_ID FIREBASE_SERVICE_ACCOUNT \
+         HOST_TOKEN_SECRET HOST_PASSCODE; do
   grep "^$k=" .env.local | cut -d= -f2- | vercel env add "$k" production
 done
 
@@ -65,15 +61,15 @@ vercel --prod
 ## Network warning
 
 **The host laptop must not be behind Zscaler or a similar inspecting proxy.**
-It severs WebSocket upgrades to `supabase.co`, and the whole live tally rides
+It severs WebSocket upgrades to `firebasedatabase.app`, and the whole live tally rides
 one WebSocket. The symptom is a host screen that sits at zero while the room
 tilts — no error, just nothing. Phones on cellular are unaffected.
 
 Test for it in one line:
 
 ```bash
-openssl s_client -connect bxgjkzlrncmvvcgiqyhm.supabase.co:443 -servername \
-  bxgjkzlrncmvvcgiqyhm.supabase.co </dev/null 2>/dev/null | grep issuer
+openssl s_client -connect vote-tilt-default-rtdb.firebaseio.com:443 -servername \
+  vote-tilt-default-rtdb.firebaseio.com </dev/null 2>/dev/null | grep issuer
 ```
 
 A real issuer means you are fine. `O = Zscaler Inc.` means switch to a hotspot.
@@ -139,5 +135,6 @@ done
 vercel --prod        # env changes only take effect on a new deployment
 ```
 
-`HOST_DB_SECRET` is independent and must keep matching `private.host_config`;
-changing it needs the SQL in section 2.
+`HOST_TOKEN_SECRET` is independent of the passcode. Changing either only
+invalidates the existing host cookie, so you sign in again and nothing else
+moves — no migration, no database change.

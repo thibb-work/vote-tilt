@@ -3,6 +3,24 @@
     ".read": false,
     ".write": false,
 
+    "sessions": {
+      "$slug": {
+        ".read": "auth != null",
+        ".write": false,
+        ".validate": "newData.hasChildren(['options'])",
+
+        "slug": { ".validate": "newData.isString()" },
+        "options": { ".validate": "newData.hasChildren()" },
+        "frozen": { ".validate": "newData.isBoolean()" },
+        "frozen_tallies": { ".validate": "newData.hasChildren()" },
+        "frozen_at": { ".validate": "newData.isString()" },
+        "round_started": { ".validate": "newData.isString()" },
+        "updated_at": { ".validate": "newData.isString()" },
+
+        "$other": { ".validate": false }
+      }
+    },
+
     "rooms": {
       "$room": {
         ".validate": "$room.matches(/^[23456789bcdfghjkmnpqrstvwxz]{14}$/)",

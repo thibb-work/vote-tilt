@@ -7,12 +7,16 @@ export const HOST_COOKIE = 'vt_host';
 /**
  * Bearer value for the host cookie. Derived rather than random so it survives
  * redeploys and needs no store -- there is exactly one host and one round.
+ *
+ * The salt was once HOST_DB_SECRET, which also authorised the Postgres RPCs.
+ * Those are gone; host writes now go through the Admin SDK, so this value only
+ * ever salts the cookie. Renamed so it stops implying a database grant.
  */
 export function hostToken(): string {
   const passcode = process.env.HOST_PASSCODE;
-  const secret = process.env.HOST_DB_SECRET;
+  const secret = process.env.HOST_TOKEN_SECRET;
   if (!passcode || !secret) {
-    throw new Error('HOST_PASSCODE and HOST_DB_SECRET must both be set.');
+    throw new Error('HOST_PASSCODE and HOST_TOKEN_SECRET must both be set.');
   }
   return createHash('sha256').update(`${passcode}:${secret}`).digest('hex');
 }

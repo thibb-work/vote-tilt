@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { isHost, sameOrigin } from '@/lib/hostAuth';
-import { hostRpc } from '@/lib/supabase/server';
+import { reset } from '@/lib/firebase/session';
 
 export async function POST(request: Request) {
   if (!sameOrigin(request)) {
@@ -10,13 +10,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const { client, secret } = hostRpc();
-  const { error } = await client.rpc('host_reset', { p_secret: secret });
-  if (error) {
-    // Postgres messages name functions and columns. The host has no use for
-    // that on a projector, and it is free reconnaissance if the screen is
+  try {
+    await reset();
+  } catch (error) {
+    // Driver messages name paths and credentials. The host has no use for that
+    // on a projector, and it is free reconnaissance if the screen is
     // photographed, so it stays in the server log.
-    console.error(`${new URL(request.url).pathname} failed:`, error.message);
+    console.error(`${new URL(request.url).pathname} failed:`, error);
     return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 

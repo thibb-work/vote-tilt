@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { isHost, sameOrigin } from '@/lib/hostAuth';
-import { hostRpc } from '@/lib/supabase/server';
+import { setOptions } from '@/lib/firebase/session';
 import { MAX_OPTION_LEN } from '@/lib/constants';
 
 export async function POST(request: Request) {
@@ -25,16 +25,13 @@ export async function POST(request: Request) {
     );
   }
 
-  const { client, secret } = hostRpc();
-  const { error } = await client.rpc('host_set_options', {
-    p_secret: secret,
-    p_options: (options as string[]).map((o) => o.trim()),
-  });
-  if (error) {
-    // Postgres messages name functions and columns. The host has no use for
-    // that on a projector, and it is free reconnaissance if the screen is
+  try {
+    await setOptions((options as string[]).map((o) => o.trim()));
+  } catch (error) {
+    // Driver messages name paths and credentials. The host has no use for that
+    // on a projector, and it is free reconnaissance if the screen is
     // photographed, so it stays in the server log.
-    console.error(`${new URL(request.url).pathname} failed:`, error.message);
+    console.error(`${new URL(request.url).pathname} failed:`, error);
     return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 
