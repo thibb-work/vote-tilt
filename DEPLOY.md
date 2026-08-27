@@ -20,6 +20,7 @@ Copy `.env.example` to `.env.local` and fill it in:
 | `FIREBASE_SERVICE_ACCOUNT` | Firebase console → Project settings → Service accounts → Generate new private key, as one line of JSON |
 | `HOST_TOKEN_SECRET` | anything long and random — it salts the host cookie |
 | `HOST_PASSCODE` | anything you like — it is what you type on `/host` |
+| `NEXT_PUBLIC_JOIN_ORIGIN` | optional; fills itself in from `VERCEL_PROJECT_PRODUCTION_URL` on Vercel. See "Which URL the QR points at" below |
 
 `FIREBASE_SERVICE_ACCOUNT`, `HOST_TOKEN_SECRET` and `HOST_PASSCODE` are **not**
 `NEXT_PUBLIC_`. The service account is the whole database; the other two are
@@ -57,6 +58,38 @@ vercel --prod
 4. Lie the phone flat — the vote should drop out and the total stay.
 5. Hit **Freeze** on the host. The phone should switch to the result view with
    no refresh. Hit **Reset** and confirm it goes live again.
+
+## Which URL the QR points at
+
+**Only `https://vote-tilt.vercel.app` is open to phones.** The project has Vercel
+Authentication switched on (`ssoProtection: all_except_custom_domains`), so all
+three of its other addresses turn a stranger away:
+
+| URL | What a phone gets |
+|---|---|
+| `vote-tilt.vercel.app` | the vote |
+| `vote-tilt-thibblab.vercel.app` | 302 → `vercel.com/sso-api` |
+| `vote-tilt-git-main-thibblab.vercel.app` | 302 → `vercel.com/sso-api` |
+| `vote-tilt-<hash>-thibblab.vercel.app` | 302 → `vercel.com/sso-api` |
+
+The host laptop carries the Vercel session cookie, so a walled URL looks perfect
+on the projector while every phone in the room hits a sign-in page. That is the
+failure this guards against: `QrPanel` asks, without credentials, whether a
+stranger can open the origin it is about to encode, and falls back to
+`NEXT_PUBLIC_JOIN_ORIGIN` when the answer is no. When there is no fallback it
+says so instead of showing a code that scans cleanly and strands the room.
+
+Two things worth doing:
+
+- **Open the host screen on `vote-tilt.vercel.app/host`**, not on the deployment
+  URL the Vercel dashboard links to. Then the code needs no fallback at all.
+- **Consider turning Vercel Authentication off** for this project. It is a public
+  audience poll; the protection buys nothing here and it is what makes preview
+  deployments impossible to test by scanning.
+
+`NEXT_PUBLIC_JOIN_ORIGIN` is filled from `VERCEL_PROJECT_PRODUCTION_URL` at build
+time, which needs "Automatically expose System Environment Variables" left on
+(it is on by default). Set it by hand for a custom domain or a non-Vercel host.
 
 ## Network warning
 

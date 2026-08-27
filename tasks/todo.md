@@ -182,3 +182,100 @@ Only the explicit tap clears the dial.
 
 `WinnerVeil` is still used by the real voter screen, so nothing was orphaned. Say the
 word if the reveal should come back to the demo as a third control.
+
+---
+
+# The QR pointed at a URL phones cannot open (2026-08-27)
+
+## What is wrong
+
+`QrPanel` mints the join link from `window.location.origin`, so the code encodes
+whatever URL the host laptop is on. The Vercel project has Vercel Authentication
+enabled (`ssoProtection.deploymentType = "all_except_custom_domains"`), so:
+
+| URL | Stranger sees |
+|---|---|
+| `vote-tilt.vercel.app` (production alias) | 200 |
+| `vote-tilt-<hash>-thibblab.vercel.app` | 302 → `vercel.com/sso-api` |
+| `vote-tilt-git-main-thibblab.vercel.app` | 302 → `vercel.com/sso-api` |
+
+Open `/host` from the Vercel dashboard — which always links the *deployment* URL —
+and the QR encodes a walled origin. The laptop passes on its Vercel cookie, so the
+host screen looks perfect; the phone has no cookie and lands on a login page.
+
+The comment on `QrPanel` claims the origin trick means it "works on preview URLs
+too". With protection on, previews are the only URLs where it cannot work.
+
+## The shape of the fix
+
+Not "always use a canonical URL" — that would send a preview's scanners to
+production and make voter-page changes untestable. Instead: **ask whether a
+stranger can open this origin, and only then reach for a fallback.**
+
+- [x] `lib/joinOrigin.ts` — pure `chooseJoinOrigin({ current, canonical, reach })`
+      returning the origin to encode plus a reason. No DOM, no fetch.
+- [x] `lib/useJoinOrigin.ts` — thin hook. Probes `/` once per host session with
+      `credentials: 'omit'` (what a phone sees, not what the signed-in host sees)
+      and `redirect: 'manual'`. 2xx → `public`; anything else → `unreachable`;
+      a thrown request → `unknown`, which fails **open** to today's behaviour.
+- [x] `next.config.ts` — inline the canonical origin at build time:
+      `NEXT_PUBLIC_JOIN_ORIGIN` if set, else `https://$VERCEL_PROJECT_PRODUCTION_URL`.
+      Zero config on Vercel, overridable anywhere.
+- [x] `components/QrPanel.tsx` — render from the chosen origin, caption included,
+      so the text under the code can never disagree with the code. No QR at all
+      while the answer is unknown; an actionable message when the origin is
+      walled and no fallback exists.
+- [x] `test/joinOrigin.test.ts` — every combination of the three inputs.
+- [x] `.env.example` + `DEPLOY.md` — document `NEXT_PUBLIC_JOIN_ORIGIN`.
+
+Do **not** probe the canonical origin: the app's own CSP `connect-src` is `'self'`
+plus the database hosts, so a cross-origin probe is blocked by policy.
+
+## How it gets proven
+
+Deployed previews are walled, so Playwright cannot reach one and driving a Vercel
+login is off limits. Reproduce the topology locally instead:
+
+```
+next start (port A)  <--  proxy (port B)
+  no `_vercel_jwt` cookie -> 302 https://vercel.com/sso-api?...
+  cookie present          -> pass through
+```
+
+Browser navigation carries the cookie, so the host sees the board exactly as today.
+The probe omits credentials, so it gets the 302. Faithful, and no login anywhere.
+
+- [x] decode the QR **pixels** with `jsqr` — the image is what users scan, a DOM
+      string would only prove what we already believe;
+- [x] fetch the decoded URL with credentials omitted and assert 200.
+
+## Review
+
+Shipped as planned, with one thing the plan did not foresee: `setSrc('')` at the top
+of the encoding effect tripped `react-hooks/set-state-in-effect`. The rule was right.
+The QR is now kept beside the link it was drawn from (`{ link, src }`) and displayed
+only when the two agree, which removes the stale-code window entirely instead of
+papering over it with an extra render — encoding is asynchronous, so a bare `src`
+kept showing the previous origin's code until the new one resolved, and a stale code
+scans exactly as cleanly as a live one.
+
+| Check | Result |
+|---|---|
+| `npm test` | **84/84**, nine of them new |
+| `npx tsc --noEmit`, `npm run lint`, `npm run build` | clean |
+| QC — walled origin, fallback configured | **9/9** |
+| QC — public origin | **3/3** |
+| QC — walled origin, no fallback | **2/2** |
+
+The QC ran against `next start` behind a proxy that mirrors Vercel Authentication:
+302 to `vercel.com/sso-api` without the `_vercel_jwt` cookie, pass-through with it.
+The browser navigation carried the cookie and the probe did not, which is exactly
+the asymmetry that hid the bug in production. Every case decoded the QR from its own
+pixels with `jsqr`, and the walled case then fetched the decoded URL with no cookies
+at all and got a 200 carrying the vote page — the phone's journey, end to end.
+
+Not verified, and it cannot be from here: that `VERCEL_PROJECT_PRODUCTION_URL` is
+actually exposed to this project's builds. It is on by default. If it is off, the
+fallback is empty and a host on a walled URL gets the "no code to show" message
+rather than a working code — safe, but not the intended answer. Confirm on the next
+deployment, or set `NEXT_PUBLIC_JOIN_ORIGIN` by hand.

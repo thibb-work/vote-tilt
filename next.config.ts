@@ -39,8 +39,30 @@ const csp = [
   'upgrade-insecure-requests',
 ].join('; ');
 
+/**
+ * Where the QR code points when the origin the host is on turns out to be one a
+ * phone cannot open. Vercel Authentication protects every URL of this project
+ * except the production alias, so a host who opened the app from the dashboard
+ * -- which always links the deployment URL -- would otherwise mint a code that
+ * lands the room on a sign-in page.
+ *
+ * VERCEL_PROJECT_PRODUCTION_URL is the production alias, supplied by the
+ * platform on every deployment, so this needs no configuration to be right.
+ * Setting NEXT_PUBLIC_JOIN_ORIGIN by hand wins, which is what a custom domain
+ * or a non-Vercel host would do. Empty is a valid answer: it means there is no
+ * fallback, and the host screen says so rather than showing a dead code.
+ */
+const joinOrigin =
+  process.env.NEXT_PUBLIC_JOIN_ORIGIN ??
+  (process.env.VERCEL_PROJECT_PRODUCTION_URL
+    ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+    : '');
+
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  // Computed above rather than read from the environment, so it has to be
+  // inlined explicitly for the browser.
+  env: { NEXT_PUBLIC_JOIN_ORIGIN: joinOrigin },
   async headers() {
     return [
       {

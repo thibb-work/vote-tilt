@@ -626,3 +626,13 @@ body {
   font-size: 14px;
   text-underline-offset: 4px;
 }
+
+/* The host cannot tell a dead QR code from a live one by looking, so the one
+   case where the code is not what you would expect has to say so in colour. */
+.join-warn {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #c01840;
+  text-align: center;
+}
