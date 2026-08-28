@@ -69,3 +69,27 @@ counted. But it cost a round trip that a syntax check would have prevented.
 **The rule:** when a plan leans on a specific API surface — a rules method, a CLI
 flag, a header — verify it exists while planning. `firebase deploy --only database`
 validates rules syntax in seconds.
+
+## A green browser test can be green for the wrong reason
+
+**2026-08-28.** The end-to-end run for the orphaned-room warning came back 10/19,
+and every one of the nine failures was the harness, not the app.
+
+`innerText` returns text as *rendered*, and `.status-line` is
+`text-transform: uppercase` — so `includes('Waiting for the first phone')` was
+comparing against `WAITING FOR THE FIRST PHONE` and failing on a screen that was
+correct. Use `textContent`, which is the DOM's own string.
+
+Worse, `context.setOffline(true)` was never undone by `setOffline(false)`: the
+context stayed dark, and eight later assertions read `Reconnecting` from a socket
+that was still cut. One of them *passed* while doing so, because the case bug
+inverted it. A test that passes while the thing it tests is broken is worse than
+one that fails.
+
+**The rules:**
+- Assert on `textContent`, never `innerText`, wherever CSS may transform text.
+- Anything that breaks the environment — offline, throttling, a killed process —
+  gets its own throwaway context that is closed rather than restored.
+- Before cutting a dependency to prove a failure mode, assert the *healthy* state
+  first. `!warned` on a phone that never connected proves nothing; `!warned &&
+  !line.includes('Reconnecting')` proves it was watched before the cut.
