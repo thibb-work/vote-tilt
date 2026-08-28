@@ -40,6 +40,12 @@ export function HostBoard() {
   const frozen = session?.frozen ?? false;
   const counts = frozen ? talliesToCounts(session?.frozen_tallies) : room.counts;
 
+  // Whether this screen is actually serving the room, rather than just having
+  // rendered. A QR code costs nothing to draw and looks identical either way,
+  // so without this the projector cheerfully invites a room full of phones
+  // into a round nobody is running.
+  const serving = room.status === 'live' && room.watch !== 'orphaned';
+
   const voted = counts.reduce((a, b) => a + b, 0);
   const peak = Math.max(1, ...counts);
   const top = leaders(counts);
@@ -66,7 +72,7 @@ export function HostBoard() {
   return (
     <>
       <div className="host">
-        <QrPanel roomId={roomId} />
+        <QrPanel roomId={roomId} live={serving} />
 
         <div className="host-dial">
           <Dial
@@ -84,17 +90,22 @@ export function HostBoard() {
         <section className="tally">
           <div className="tally-head">
             <h1>{frozen ? 'Locked' : 'Tilt to vote'}</h1>
-            <div className="status-line">
-              <span className={`dot${room.status === 'live' ? '' : ' is-off'}`} />
-              {/* Zero used to read the same whether the socket was down, the room
-                  was empty, or every phone was in a room this screen retired.
-                  Only the first two are visible from here -- the phones report
-                  the third themselves -- so say which of the two this is. */}
-              {room.status !== 'live'
-                ? 'Connecting'
-                : !frozen && room.total === 0
-                  ? 'Waiting for the first phone'
-                  : `${room.total} ${room.total === 1 ? 'phone' : 'phones'} · ${voted} aiming`}
+            <div className={`status-line${serving ? '' : ' is-warn'}`}>
+              <span className={`dot${serving ? '' : ' is-off'}`} />
+              {/* Zero used to read the same whether the socket was down, the
+                  sign-in had been refused, the room was empty, or every phone
+                  was in a room this screen retired. The phones report the last
+                  one themselves; the rest are only visible from here, so say
+                  which of them this is. */}
+              {room.status === 'error'
+                ? 'Cannot sign in — retrying'
+                : room.status !== 'live'
+                  ? 'Connecting'
+                  : room.watch === 'orphaned'
+                    ? 'Not reaching the room — phones will not be counted'
+                    : !frozen && room.total === 0
+                      ? 'Waiting for the first phone'
+                      : `${room.total} ${room.total === 1 ? 'phone' : 'phones'} · ${voted} aiming`}
             </div>
           </div>
 

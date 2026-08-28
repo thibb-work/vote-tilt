@@ -501,6 +501,18 @@ body {
 }
 
 /* The second half of New QR. Red because the next click empties the room. */
+.status-line.is-warn {
+  color: #a3123c;
+}
+
+/* A code that cannot be honoured must not look like one that can -- the host is
+   reading this from across a room, and greying it out carries further than any
+   sentence underneath it. */
+.qr.is-dead {
+  opacity: 0.22;
+  filter: grayscale(1);
+}
+
 .ctl.is-armed {
   background: rgba(255, 59, 107, 0.14);
   border-color: rgba(255, 59, 107, 0.55);

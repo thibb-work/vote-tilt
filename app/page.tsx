@@ -150,7 +150,8 @@ export default function VotePage() {
           // Both causes, because the phone cannot tell them apart and the same
           // action fixes either one.
           <p className="status-hint is-warn">
-            Nobody is reading this room. If the code on the main screen changed, scan it again.
+            Nobody is reading this room. Scan the QR code on the main screen again — and
+            check that screen says it is connected.
           </p>
         ) : (
           <p className="status-hint">

@@ -23,8 +23,10 @@ const PUBLISH_INTERVAL_MS = 300;
 const TALLY_INTERVAL_MS = 250;
 /** A phone whose last write is older than this is treated as gone. */
 const STALE_MS = 6000;
-/** How often a phone re-asks whether the room it is writing into is still being read. */
+/** How often a screen re-asks whether it is still in contact with its room. */
 const WATCH_INTERVAL_MS = 1000;
+/** How long to wait before asking for an identity again after a refused sign-in. */
+const AUTH_RETRY_MS = 3000;
 
 const zeros = () => new Array<number>(WEDGE_COUNT).fill(0);
 
@@ -37,8 +39,10 @@ export interface Room {
   total: number;
   status: RoomStatus;
   /**
-   * voters only: whether a host screen is reading this room. Stays 'checking'
-   * for the host, which is the screen doing the reading.
+   * Whether this screen is really in contact with the room, as opposed to
+   * merely holding an open socket. A phone proves it by the tallies that
+   * arrive; a host proves it by the tallies that land. Both failures used to
+   * look exactly like a quiet room.
    */
   watch: WatchState;
   /** one entry per phone -- populated for the host only */
@@ -85,7 +89,8 @@ export function useRoom({ role, roomId }: { role: Role; roomId: string | null })
 
   // Read inside intervals, where React state would be a stale closure.
   const socketUp = useRef(false);
-  /** When a tally last landed here. Arrival time, not the host clock inside it. */
+  /** When a tally last proved contact: arriving for a phone, accepted for a
+      host. Measured on this clock, never the one inside the payload. */
   const tallyAt = useRef<number | null>(null);
   /** When the grace clock last restarted: connect, reconnect, or waking up. Set
       by the effect, never during render -- a clock read is not a pure value. */
@@ -126,6 +131,31 @@ export function useRoom({ role, roomId }: { role: Role; roomId: string | null })
           socketUp.current = up;
           setStatus(up ? 'live' : 'connecting');
         }),
+      );
+
+      // A backgrounded tab has its timers throttled and its updates queued, so
+      // a screen coming out of a pocket -- or off a projector that slept --
+      // deserves the same grace as one that has just reconnected.
+      const onVisible = () => {
+        if (document.visibilityState === 'visible') settledAt.current = Date.now();
+      };
+      document.addEventListener('visibilitychange', onVisible);
+      cleanups.push(() => document.removeEventListener('visibilitychange', onVisible));
+
+      // Silence is not an event, so nothing else would ever notice it. Both
+      // roles run this: the phone is asking whether anyone is reading the room,
+      // the host whether anything it writes is getting through.
+      timers.push(
+        setInterval(() => {
+          const now = Date.now();
+          setWatch(
+            roomWatchState({
+              live: socketUp.current,
+              msSinceTally: tallyAt.current === null ? null : now - tallyAt.current,
+              msSinceSettled: now - settledAt.current,
+            }),
+          );
+        }, WATCH_INTERVAL_MS),
       );
 
       if (role === 'voter') {
@@ -171,28 +201,6 @@ export function useRoom({ role, roomId }: { role: Role; roomId: string | null })
           },
         );
 
-        // A backgrounded tab has its timers throttled and its updates queued, so
-        // a phone coming out of a pocket deserves the same grace as one that has
-        // just reconnected.
-        const onVisible = () => {
-          if (document.visibilityState === 'visible') settledAt.current = Date.now();
-        };
-        document.addEventListener('visibilitychange', onVisible);
-        cleanups.push(() => document.removeEventListener('visibilitychange', onVisible));
-
-        // Silence is not an event, so nothing else would ever notice it.
-        timers.push(
-          setInterval(() => {
-            const now = Date.now();
-            setWatch(
-              roomWatchState({
-                live: socketUp.current,
-                msSinceTally: tallyAt.current === null ? null : now - tallyAt.current,
-                msSinceSettled: now - settledAt.current,
-              }),
-            );
-          }, WATCH_INTERVAL_MS),
-        );
         return;
       }
 
@@ -247,7 +255,16 @@ export function useRoom({ role, roomId }: { role: Role; roomId: string | null })
           for (const [id, r] of live) {
             if (r.t >= cutoff) alive.push({ id, heading: r.heading, magnitude: r.magnitude });
           }
-          void set(tallyRef, { c: countsFrom(alive), n: alive.length, t: Date.now() });
+          // The write is the host's half of the proof the phones already rely
+          // on: if it is accepted, this screen really is serving this room. A
+          // rejection used to go straight on the floor, which is how a screen
+          // could keep showing a healthy QR code while writing nowhere.
+          void set(tallyRef, { c: countsFrom(alive), n: alive.length, t: Date.now() }).then(
+            () => {
+              tallyAt.current = Date.now();
+            },
+            () => {},
+          );
         }, TALLY_INTERVAL_MS),
       );
 
@@ -256,16 +273,26 @@ export function useRoom({ role, roomId }: { role: Role; roomId: string | null })
 
     // The rules refuse every read and write until an identity exists, so there
     // is nothing worth setting up before the sign-in lands.
-    roomAuth()
-      .then((identity) => {
-        if (!cancelled) connect(identity);
-      })
-      .catch(() => {
-        if (!cancelled) setStatus('error');
-      });
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    const signIn = () => {
+      roomAuth()
+        .then((identity) => {
+          if (!cancelled) connect(identity);
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setStatus('error');
+          // Giving up here is giving up on the page: nothing reads or writes
+          // without an identity, and the screen has no way to ask for one
+          // again short of a reload nobody knows to perform.
+          retry = setTimeout(signIn, AUTH_RETRY_MS);
+        });
+    };
+    signIn();
 
     return () => {
       cancelled = true;
+      clearTimeout(retry);
       timers.forEach(clearInterval);
       cleanups.forEach((fn) => fn());
     };

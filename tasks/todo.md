@@ -412,3 +412,62 @@ enumerated to delete; they are inert and bounded to that one run.
 the only wall in front of Freeze and Reset, reachable from every preview
 deployment. `scripts/rotate-secrets.sh` mints one.
 
+
+
+## Round two (2026-08-28): the host, not the phone
+
+The warning shipped last round was correct and the room was still broken. Read
+from the live database: the phone was writing into `rooms/<id>/phones/<uid>`
+every second or two, and that room had never received a single tally -- nor had
+any room, for two and a half hours. The phone was healthy. No host was serving.
+
+Ruled out first, all against production: deployed rules byte-identical to
+`database.rules.json`; this machine's clock 151ms from Google's, against a 5s
+validation window; identical CSP on `/` and `/host`, `connect-src` naming both
+Firebase hosts; one production deployment on the current commit, no preview
+split. The same code serving from this machine into the same database works.
+
+**Root cause.** `roomAuth()` memoised its promise -- rejections included:
+
+    let uid: Promise<string> | null = null;
+    export function roomAuth() { if (uid) return uid; ... }
+
+and `useRoom` asked exactly once, catching the failure into `status: 'error'`.
+So a single refused anonymous sign-in at page load -- a laptop still waking, a
+wifi handover, a captive portal answering the first request -- left the tab
+permanently unable to read or write, for as long as it stayed open. Nothing
+said so. `QrPanel` does not depend on auth, so the projector went on displaying
+a crisp, scannable QR code, and `HostBoard` rendered `'error'` and
+`'connecting'` with the same word: "Connecting".
+
+Every phone that scanned that code then joined a room nobody was reading.
+
+- [x] `roomAuth()` forgets a failed attempt instead of caching it forever
+- [x] `useRoom` retries sign-in every 3s rather than giving up on the page
+- [x] the host verifies its own tally writes -- `set()` rejections were dropped
+      on the floor, so the host had no idea whether anything landed
+- [x] the watch ticker runs for both roles: a phone trusts tallies that arrive,
+      a host trusts tallies that are accepted
+- [x] `HostBoard` names the failure: "Cannot sign in — retrying", "Not reaching
+      the room — phones will not be counted"
+- [x] `QrPanel` greys out a code it cannot honour, and says why
+- [x] the phone's hint says "QR code", not "code" -- the wording sent the host
+      hunting for a text code that does not exist
+
+**Proof.** `test/e2e/host-recovery.mjs`, real browsers against the real
+database, blocking `identitytoolkit.googleapis.com` for the host only:
+
+    PASS  THE BUG: it says it cannot sign in, instead of "Connecting" forever
+    PASS  and the QR code is marked unscannable rather than looking healthy
+    PASS  the phone reports the room nobody is reading
+    PASS  THE FIX: the host signs in on its own, with no reload
+    PASS  the host now sees the phone that was already waiting
+    PASS  and the phone stops warning, without being touched
+    PASS  a healthy host never flashes the warning
+
+12/12, plus the previous 19/19 orphan suite unchanged, 94/94 unit, lint and
+build clean.
+
+Still not done: `HOST_PASSCODE` is unrotated, and since Vercel Authentication
+came off it is the only wall in front of Freeze and Reset on every deployment
+URL. `scripts/rotate-secrets.sh` mints one.

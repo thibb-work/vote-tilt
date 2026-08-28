@@ -11,7 +11,7 @@ import { ROOM_QUERY_KEY } from '@/lib/room';
  * in which case it points at the public one instead. See lib/joinOrigin.ts for
  * why that distinction exists at all.
  */
-export function QrPanel({ roomId }: { roomId: string | null }) {
+export function QrPanel({ roomId, live }: { roomId: string | null; live: boolean }) {
   const { origin, reason } = useJoinOrigin();
 
   // The room id rides in the link and nowhere else. It is the only thing
@@ -69,13 +69,21 @@ export function QrPanel({ roomId }: { roomId: string | null }) {
       {src ? (
         // A data: URI generated in the browser -- next/image has nothing to optimise here.
         // eslint-disable-next-line @next/next/no-img-element
-        <img className="qr" src={src} alt="QR code to join the vote" />
+        <img className={`qr${live ? '' : ' is-dead'}`} src={src} alt="QR code to join the vote" />
       ) : (
         <div className="qr" style={{ aspectRatio: 1 }} />
       )}
       {/* Read from the same origin the code was built from, so the text under a
           code can never disagree with the code above it. */}
       <div className="join-url">{(origin ?? '').replace(/^https?:\/\//, '')}</div>
+      {/* A code that scans perfectly and joins a round nobody is running is the
+          same failure this file exists to prevent, arriving from the other
+          direction. Say so on the code itself, where the host is looking. */}
+      {!live && (
+        <p className="join-warn">
+          This screen is not connected — a phone scanning now will not be counted.
+        </p>
+      )}
       {reason === 'fallback' && (
         <p className="join-warn">
           This screen is on an address phones cannot open, so the code points at

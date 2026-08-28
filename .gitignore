@@ -42,3 +42,7 @@ next-env.d.ts
 
 # keep the template committed
 !.env.example
+
+# The e2e harnesses read a local app.env: the public NEXT_PUBLIC_FIREBASE_*
+# values plus a throwaway host passcode. Never committed.
+test/e2e/app.env

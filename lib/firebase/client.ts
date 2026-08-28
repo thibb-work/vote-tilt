@@ -46,7 +46,7 @@ export function roomAuth(): Promise<string> {
 
   const auth: Auth = getAuth(getApps()[0] ?? initializeApp(config));
 
-  uid = new Promise<string>((resolve, reject) => {
+  const attempt = new Promise<string>((resolve, reject) => {
     // A session may already exist in this browser, so watch for it before
     // asking for a new one -- signing in twice would orphan the first node.
     const stop = onAuthStateChanged(
@@ -64,5 +64,15 @@ export function roomAuth(): Promise<string> {
     signInAnonymously(auth).catch(reject);
   });
 
+  // Memoising the rejection too would turn one bad moment -- a laptop still
+  // waking, a wifi handover, a captive portal answering the first request --
+  // into a page that never connects again for as long as it stays open. It
+  // would go on drawing a QR code the whole time. Forget a failed attempt so
+  // the next caller starts a fresh one.
+  void attempt.catch(() => {
+    if (uid === attempt) uid = null;
+  });
+
+  uid = attempt;
   return uid;
 }

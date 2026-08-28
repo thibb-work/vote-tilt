@@ -1,0 +1,26 @@
+# End-to-end harnesses
+
+Real browsers, a real production build, and the real Firebase database. They
+exist because both of this app's worst failures were invisible to unit tests:
+a phone writing into a room nobody read, and a host screen displaying a QR code
+it could not honour.
+
+    npm run build
+    NEXT_PUBLIC_FIREBASE_...=... npx next start -p 3400   # or: set -a; . test/e2e/app.env; set +a
+    node test/e2e/orphan.mjs          # 19 checks: the orphaned-room warning
+    node test/e2e/host-recovery.mjs   # 12 checks: a host refused its identity
+
+`app.env` sits beside these files and is gitignored. It holds the five public
+`NEXT_PUBLIC_FIREBASE_*` values -- they ship in every phone's bundle by design
+-- plus a throwaway `HOST_PASSCODE` and `HOST_TOKEN_SECRET` for the local
+server. Do not point it at production secrets.
+
+Two traps these harnesses have already fallen into, both of which made a broken
+app look green:
+
+- Assert on `textContent`, never `innerText`. The status lines are
+  `text-transform: uppercase`, so `innerText` comes back shouting and every
+  comparison fails on a correct screen.
+- Anything that breaks the environment -- `setOffline`, a blocked route -- gets
+  its own context that is closed afterwards, or is explicitly undone. A context
+  left offline silently poisons every check after it.

@@ -93,3 +93,41 @@ one that fails.
 - Before cutting a dependency to prove a failure mode, assert the *healthy* state
   first. `!warned` on a phone that never connected proves nothing; `!warned &&
   !line.includes('Reconnecting')` proves it was watched before the cut.
+
+
+## A memoised promise memoises the failure too
+
+`roomAuth()` cached `Promise<string>` in a module variable and returned it to
+every caller. That is the right shape for a value; it is the wrong shape for an
+attempt. A rejected promise stays rejected, so one refused sign-in at load broke
+a page for as long as it stayed open, and nothing retried because the cache
+looked like a completed answer.
+
+Rules:
+
+- Cache the resolution, not the attempt. If a memoised promise rejects, clear
+  the slot so the next caller starts a new one.
+- A dependency every read and write passes through does not get one chance.
+  Retry it.
+- `void somePromise()` discards the rejection. Where the promise *is* the proof
+  that the feature works -- the host's tally write was exactly this -- attach
+  the handler and record that it landed.
+
+## Fix the silence at both ends, not just the end that reported it
+
+Last round the phone was made honest about a room nobody was reading; the host
+was left rendering `'error'` and `'connecting'` as the same word, and a QR code
+that scans identically whether or not the screen behind it is connected. The
+detector found the fault and pointed at the half that was already fine, which
+cost a full extra round.
+
+Rule: when adding a detector to one side of a link, check what the other side
+shows in the same failure. A screen that keeps inviting people into a room it
+cannot serve is the more expensive half of the bug.
+
+## Read the database before theorising
+
+The cause was found by listing `/rooms` with an admin token and noticing one
+room with live phone writes and no tally node, ever. That one query eliminated
+rules, clock skew, CSP, room-id drift and deployment split -- each of which had
+a plausible story and would have taken a browser session to test.
