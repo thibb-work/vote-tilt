@@ -113,6 +113,11 @@ export default function VotePage() {
   const frozenCounts = talliesToCounts(session?.frozen_tallies);
   const aiming = reading.wedge !== null ? options[reading.wedge] : null;
 
+  // Writing into a room no host screen is reading. The dial still works and the
+  // socket is fine, so nothing else on this page would give it away -- and the
+  // one person who can fix it is holding this phone.
+  const orphaned = room.watch === 'orphaned' && !frozen;
+
   return (
     <main className="stage">
       <div className="dial-wrap">
@@ -128,19 +133,30 @@ export default function VotePage() {
       </div>
 
       <div className="status-line">
-        <span className={`dot${room.status === 'live' ? '' : ' is-off'}`} />
+        <span className={`dot${room.status === 'live' && !orphaned ? '' : ' is-off'}`} />
         {room.status !== 'live'
           ? 'Reconnecting'
           : frozen
             ? 'Round closed'
-            : aiming
-              ? `Aiming at ${aiming}`
-              : 'Level — aiming at nothing'}
+            : orphaned
+              ? 'Waiting for the host screen'
+              : aiming
+                ? `Aiming at ${aiming}`
+                : 'Level — aiming at nothing'}
       </div>
 
-      {!frozen && (
-        <p className="status-hint">Tilt freely. The host closes the round from the main screen.</p>
-      )}
+      {!frozen &&
+        (orphaned ? (
+          // Both causes, because the phone cannot tell them apart and the same
+          // action fixes either one.
+          <p className="status-hint is-warn">
+            Nobody is reading this room. If the code on the main screen changed, scan it again.
+          </p>
+        ) : (
+          <p className="status-hint">
+            Tilt freely. The host closes the round from the main screen.
+          </p>
+        ))}
 
       {frozen && <WinnerVeil options={options} counts={frozenCounts} />}
     </main>

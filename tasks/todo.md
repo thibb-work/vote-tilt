@@ -279,3 +279,136 @@ actually exposed to this project's builds. It is on by default. If it is off, th
 fallback is empty and a host on a walled URL gets the "no code to show" message
 rather than a working code — safe, but not the intended answer. Confirm on the next
 deployment, or set `NEXT_PUBLIC_JOIN_ORIGIN` by hand.
+
+# Phones vanish into a room nobody is watching (2026-08-28)
+
+## The question
+
+Is a server-side room id the best fix, given only `vote-tilt.vercel.app` matters
+and the goal is "users' tilt shows on /host"?
+
+No. It solves cross-origin drift, which that constraint removes, and it misses
+the failures that will actually happen.
+
+## What actually breaks
+
+`hostRoomIdSnapshot()` (lib/room.ts:60) mints the room into origin-scoped
+localStorage; the phone gets its room from `?r=` in the scanned URL
+(app/page.tsx:23). They disagree whenever:
+
+- the host clears site data, uses a private window, or a second laptop
+- the host presses **New QR** -- one click, no confirmation, everyone orphaned
+- the phone still has an old tab open from a previous round
+- (removed by the constraint) the host is on a different origin
+
+A server-side room id fixes only the last two-thirds of one bullet. It cannot
+fix a stale phone tab, which keeps its old `?r=` regardless.
+
+## The real defect: the failure is silent
+
+- Host shows `0 phones` identically for "nobody scanned", "everyone is in a
+  retired room", and "socket down".
+- Phone shows a working dial and the word **live** while writing into a room no
+  host reads. `room.status` only reports its own socket.
+
+Neither side says anything. That is why this is confusing rather than merely broken.
+
+## The fix: let the phone notice it is alone
+
+The host already writes `rooms/<id>/tally` every 250ms unconditionally
+(TALLY_INTERVAL_MS, lib/useRoom.ts) and the phone already subscribes to it. That
+write is an unclaimed heartbeat: **tally updates arriving == a host is watching
+this exact room.**
+
+So the phone can detect an orphaned room with no new infrastructure, no new
+route, no rules change, and no extra bandwidth.
+
+- [x] `lib/roomWatch.ts` -- pure `roomWatchState({ live, msSinceTally, msSinceSettled, graceMs })`,
+      testable without a browser, in the style of `lib/joinOrigin.ts`
+- [x] Measure staleness by **arrival time on the phone**, never by the embedded
+      `t` -- that is the host's clock, and skew would produce false alarms
+- [x] Only assert it while `status === 'live'`; a dropped socket is a different
+      message and already has one
+- [x] Reset the grace clock on reconnect and on `visibilitychange`, so a phone
+      waking from background does not flash the warning
+- [x] Voter UI: "Waiting for the host screen -- if the code changed, scan it
+      again." Honest about both causes (retired code, host screen closed)
+- [x] Keep publishing while orphaned. It costs nothing and recovers by itself
+      if the host comes back
+
+## Companions (small, same failure)
+
+- [x] Confirm before **New QR**. It is a plain button beside Lock votes on a
+      projector and one misclick empties the room silently
+- [x] Host status line: distinguish "connecting" from "live, nobody here yet"
+
+## Rejected
+
+- **Server-side room id + cookie-gated route** -- correct, but the constraint
+  removes its payoff; most code, touches auth and rules, still misses stale tabs
+- **Fixed room, no id** -- simplest, but the DB URL ships in a public bundle and
+  the repo is public: remote ballot stuffing walks straight in
+- **Room id in `sessions/main`** -- those rules grant read to `auth != null`, so
+  every phone could read it; an unguessable id anyone can fetch is not unguessable
+- **Room id in the host URL (`/host?r=`)** -- no server needed, but it puts the
+  secret in the address bar of a projected screen
+- **Deleting URLs 2-4** -- the generated `.vercel.app` domains are not removable,
+  and the per-deploy hash URL cannot be turned off at all
+
+## Review (2026-08-28)
+
+Shipped as described. Six files:
+
+- `lib/roomWatch.ts` -- the whole decision, pure. `ORPHAN_GRACE_MS = 5000`,
+  which is twenty of the host's tally writes.
+- `test/roomWatch.test.ts` -- 10 cases, including the two that make it
+  trustworthy: a dropped socket is never reported as an orphaned room, and
+  positive evidence outranks the grace window.
+- `lib/useRoom.ts` -- records tally *arrival* time, restarts the grace clock on
+  connect and on `visibilitychange`, and ticks once a second because silence is
+  not an event and nothing else would ever notice it.
+- `app/page.tsx` -- the warning, below a red dot.
+- `components/HostBoard.tsx` -- "Waiting for the first phone", and New QR now
+  asks twice.
+- `app/globals.css` -- two rules.
+
+One thing changed from the plan: the pure function takes `graceMs` as a
+parameter so a test does not have to sleep five seconds.
+
+### Proof
+
+`npm test` 94/94, `npm run lint` clean, `npm run build` clean. Then a real
+end-to-end run -- production build on :3400, real Firebase, real host screen,
+real phones driven by a synthetic gyroscope -- 19/19, including the reported
+failure reproduced and then reported by the phone:
+
+```
+PASS  the host sees the phone arrive                   -- 1 phone · 1 aiming
+PASS  a watched room raises no warning                 -- Aiming at Dynamic concept explainer
+PASS  an offline phone says Reconnecting               -- Reconnecting
+PASS  and never blames the room for its own socket     -- Reconnecting
+PASS  one click on New QR only arms it                 -- Confirm — drops everyone
+PASS  the room survived the misclick
+PASS  THE BUG: a phone left in the retired room now says so
+PASS  a room that never had a host is reported too
+PASS  scanning the new code clears the warning         -- 1 phone · 1 aiming
+```
+
+Harness at `scratchpad/e2e/orphan.mjs`. Two harness bugs were found and fixed
+before the results meant anything: `innerText` returns the uppercased render, so
+every text assertion silently failed; and a Playwright context taken offline
+never came back, which hid nine later results behind one stuck socket. The
+offline case now runs in a context of its own.
+
+### Left behind
+
+The test run created a handful of `rooms/<id>/tally` nodes in the production
+database, ~50 bytes each. The rules deny a root read, so they cannot be
+enumerated to delete; they are inert and bounded to that one run.
+
+### Not done
+
+`HOST_PASSCODE` is still un-rotated. Since Vercel Authentication went off it is
+the only wall in front of Freeze and Reset, reachable from every preview
+deployment. `scripts/rotate-secrets.sh` mints one.
+

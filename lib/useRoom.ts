@@ -14,6 +14,7 @@ import {
 import { roomAuth, roomDb } from './firebase/client';
 import { WEDGE_COUNT } from './tilt';
 import { countsFrom } from './tally';
+import { roomWatchState, type WatchState } from './roomWatch';
 import type { PhoneReading } from './dots';
 
 /** How often a phone republishes its position. Thirty phones at this rate was clean in load testing. */
@@ -22,6 +23,8 @@ const PUBLISH_INTERVAL_MS = 300;
 const TALLY_INTERVAL_MS = 250;
 /** A phone whose last write is older than this is treated as gone. */
 const STALE_MS = 6000;
+/** How often a phone re-asks whether the room it is writing into is still being read. */
+const WATCH_INTERVAL_MS = 1000;
 
 const zeros = () => new Array<number>(WEDGE_COUNT).fill(0);
 
@@ -33,6 +36,11 @@ export interface Room {
   /** phones present, including those lying flat */
   total: number;
   status: RoomStatus;
+  /**
+   * voters only: whether a host screen is reading this room. Stays 'checking'
+   * for the host, which is the screen doing the reading.
+   */
+  watch: WatchState;
   /** one entry per phone -- populated for the host only */
   readings: PhoneReading[];
   /** voters only: report where this phone is pointing right now */
@@ -67,6 +75,7 @@ export function useRoom({ role, roomId }: { role: Role; roomId: string | null })
   const [counts, setCounts] = useState<number[]>(zeros);
   const [total, setTotal] = useState(0);
   const [status, setStatus] = useState<RoomStatus>('connecting');
+  const [watch, setWatch] = useState<WatchState>('checking');
   const [readings, setReadings] = useState<PhoneReading[]>([]);
 
   const pending = useRef<{ heading: number | null; magnitude: number }>({
@@ -74,7 +83,23 @@ export function useRoom({ role, roomId }: { role: Role; roomId: string | null })
     magnitude: 0,
   });
 
+  // Read inside intervals, where React state would be a stale closure.
+  const socketUp = useRef(false);
+  /** When a tally last landed here. Arrival time, not the host clock inside it. */
+  const tallyAt = useRef<number | null>(null);
+  /** When the grace clock last restarted: connect, reconnect, or waking up. Set
+      by the effect, never during render -- a clock read is not a pure value. */
+  const settledAt = useRef(0);
+
   useEffect(() => {
+    // A different room is a fresh question. Nothing has been heard from it, and
+    // the clock that decides whether that silence is worrying starts now. The
+    // watch state itself is left to the ticker a moment later rather than reset
+    // here, so this effect never sets state synchronously.
+    socketUp.current = false;
+    tallyAt.current = null;
+    settledAt.current = Date.now();
+
     // No room id means no QR was scanned, so there is nowhere legitimate to
     // write and nothing to read. Stay disconnected rather than guessing a path.
     if (!roomId) return;
@@ -93,7 +118,13 @@ export function useRoom({ role, roomId }: { role: Role; roomId: string | null })
       // with no way to tell. .info/connected is the authoritative signal.
       cleanups.push(
         onValue(ref(db, '.info/connected'), (snap) => {
-          setStatus(snap.val() === true ? 'live' : 'connecting');
+          const up = snap.val() === true;
+          // A socket that has only just come up has not had time to hear
+          // anything, so restart the grace clock rather than let a reconnect
+          // read as an empty room.
+          if (up) settledAt.current = Date.now();
+          socketUp.current = up;
+          setStatus(up ? 'live' : 'connecting');
         }),
       );
 
@@ -127,12 +158,40 @@ export function useRoom({ role, roomId }: { role: Role; roomId: string | null })
         cleanups.push(
           onValue(tallyRef, (snap) => {
             const v = snap.val() as { c?: number[]; n?: number } | null;
+            // The host rewrites this node on a timer whether or not anyone is
+            // in the room, so an update landing is proof that a host screen is
+            // watching this exact room -- see lib/roomWatch.ts. An empty
+            // snapshot proves nothing, so it is not counted as one.
+            if (v) tallyAt.current = Date.now();
             setCounts(Array.isArray(v?.c) && v.c.length === WEDGE_COUNT ? v.c : zeros());
             setTotal(typeof v?.n === 'number' ? v.n : 0);
           }),
           () => {
             void remove(mine);
           },
+        );
+
+        // A backgrounded tab has its timers throttled and its updates queued, so
+        // a phone coming out of a pocket deserves the same grace as one that has
+        // just reconnected.
+        const onVisible = () => {
+          if (document.visibilityState === 'visible') settledAt.current = Date.now();
+        };
+        document.addEventListener('visibilitychange', onVisible);
+        cleanups.push(() => document.removeEventListener('visibilitychange', onVisible));
+
+        // Silence is not an event, so nothing else would ever notice it.
+        timers.push(
+          setInterval(() => {
+            const now = Date.now();
+            setWatch(
+              roomWatchState({
+                live: socketUp.current,
+                msSinceTally: tallyAt.current === null ? null : now - tallyAt.current,
+                msSinceSettled: now - settledAt.current,
+              }),
+            );
+          }, WATCH_INTERVAL_MS),
         );
         return;
       }
@@ -216,5 +275,5 @@ export function useRoom({ role, roomId }: { role: Role; roomId: string | null })
     pending.current = { heading, magnitude };
   }, []);
 
-  return { counts, total, status, readings, publish };
+  return { counts, total, status, watch, readings, publish };
 }

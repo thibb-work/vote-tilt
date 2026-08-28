@@ -338,6 +338,13 @@ body {
   color: var(--muted);
 }
 
+/* A phone writing into a room nobody reads looks identical to a working one,
+   so this line has to carry more weight than an ordinary hint. */
+.status-hint.is-warn {
+  color: #a3123c;
+  font-weight: 600;
+}
+
 .join-card {
   background: var(--panel);
   border: 1px solid var(--edge);
@@ -491,6 +498,13 @@ body {
 .ctl:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+/* The second half of New QR. Red because the next click empties the room. */
+.ctl.is-armed {
+  background: rgba(255, 59, 107, 0.14);
+  border-color: rgba(255, 59, 107, 0.55);
+  color: #a3123c;
 }
 
 /* ---------- login / editor ---------- */

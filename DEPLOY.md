@@ -58,6 +58,10 @@ vercel --prod
 4. Lie the phone flat — the vote should drop out and the total stay.
 5. Hit **Freeze** on the host. The phone should switch to the result view with
    no refresh. Hit **Reset** and confirm it goes live again.
+6. Press **New QR** twice -- it asks before it retires the code -- and watch the
+   phone. Within about five seconds it should say *Waiting for the host screen*
+   rather than sitting on a working dial nobody is reading. Scanning the new
+   code clears it.
 
 ## Which URL the QR points at
 
@@ -110,7 +114,7 @@ A real issuer means you are fine. `O = Zscaler Inc.` means switch to a hotspot.
 ## Running the checks
 
 ```bash
-npm test          # 29 unit tests, no network
+npm test          # unit tests, no network
 npm run lint
 npm run build
 ```

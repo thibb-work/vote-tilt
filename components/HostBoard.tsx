@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useSyncExternalStore } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { CountUp } from './CountUp';
 import { Dial } from './Dial';
 import { OptionsEditor } from './OptionsEditor';
@@ -25,6 +25,16 @@ export function HostBoard() {
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // New QR empties the room, and it sits one button away from Lock votes on a
+  // projected screen. Asking twice costs a click; a misclick costs the round.
+  // A two-step button rather than confirm(), which would block the page.
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    if (!armed) return;
+    const t = setTimeout(() => setArmed(false), 4000);
+    return () => clearTimeout(t);
+  }, [armed]);
 
   const options = session?.options ?? FALLBACK_OPTIONS;
   const frozen = session?.frozen ?? false;
@@ -76,7 +86,15 @@ export function HostBoard() {
             <h1>{frozen ? 'Locked' : 'Tilt to vote'}</h1>
             <div className="status-line">
               <span className={`dot${room.status === 'live' ? '' : ' is-off'}`} />
-              {room.total} {room.total === 1 ? 'phone' : 'phones'} · {voted} aiming
+              {/* Zero used to read the same whether the socket was down, the room
+                  was empty, or every phone was in a room this screen retired.
+                  Only the first two are visible from here -- the phones report
+                  the third themselves -- so say which of the two this is. */}
+              {room.status !== 'live'
+                ? 'Connecting'
+                : !frozen && room.total === 0
+                  ? 'Waiting for the first phone'
+                  : `${room.total} ${room.total === 1 ? 'phone' : 'phones'} · ${voted} aiming`}
             </div>
           </div>
 
@@ -122,12 +140,19 @@ export function HostBoard() {
           Edit options
         </button>
         <button
-          className="ctl"
+          className={`ctl${armed ? ' is-armed' : ''}`}
           disabled={busy}
           title="Mint a new join code. Everyone currently connected drops out."
-          onClick={retireHostRoomId}
+          onClick={() => {
+            if (!armed) {
+              setArmed(true);
+              return;
+            }
+            setArmed(false);
+            retireHostRoomId();
+          }}
         >
-          New QR
+          {armed ? 'Confirm — drops everyone' : 'New QR'}
         </button>
       </div>
 
