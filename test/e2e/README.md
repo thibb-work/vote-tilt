@@ -9,6 +9,8 @@ it could not honour.
     NEXT_PUBLIC_FIREBASE_...=... npx next start -p 3400   # or: set -a; . test/e2e/app.env; set +a
     node test/e2e/orphan.mjs          # 19 checks: the orphaned-room warning
     node test/e2e/host-recovery.mjs   # 12 checks: a host refused its identity
+    node test/e2e/clock.mjs           # 6 checks: screens whose clocks are wrong
+    node test/e2e/returning.mjs       # 15 checks: a host that has been here before
     node test/e2e/latency.mjs         # how long a tilt takes to move a host dot
     node test/e2e/bandwidth.mjs       # what one phone costs the host on the wire
 
@@ -35,3 +37,7 @@ app look green:
   The QR image only exists once `QRCode.toDataURL` resolves, which is a beat
   after the surrounding layout appears. A bare `count() > 0` there passes or
   fails on machine speed; wrap it in `until`.
+
+- **Truncate a log before re-running into it.** A poll that waits for `passed`
+  to appear will match the *previous* run's output and report a stale result --
+  which is how a fix that worked first time looked like it had failed twice.

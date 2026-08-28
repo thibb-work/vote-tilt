@@ -133,22 +133,30 @@ export default function VotePage() {
       </div>
 
       <div className="status-line">
-        <span className={`dot${room.status === 'live' && !orphaned ? '' : ' is-off'}`} />
+        <span className={`dot${room.status === 'live' && !orphaned && !room.fault ? '' : ' is-off'}`} />
         {room.status !== 'live'
           ? 'Reconnecting'
           : frozen
             ? 'Round closed'
-            : orphaned
-              ? 'Waiting for the host screen'
-              : aiming
-                ? `Aiming at ${aiming}`
-                : 'Level — aiming at nothing'}
+            : // A refused write is its own failure: the socket is up, the host
+              // is answering, and this phone alone is not in the count. Nothing
+              // else on this screen would differ.
+              room.fault
+              ? 'Not being counted'
+              : orphaned
+                ? 'Waiting for the host screen'
+                : aiming
+                  ? `Aiming at ${aiming}`
+                  : 'Level — aiming at nothing'}
       </div>
 
       {!frozen &&
-        (orphaned ? (
-          // Both causes, because the phone cannot tell them apart and the same
-          // action fixes either one.
+        (room.fault ? (
+          // Rescanning is the fix when the room is simply unread. It is the
+          // wrong advice when this phone's own writes are being refused, so the
+          // database's own reason comes first.
+          <p className="status-hint is-warn">{room.fault}</p>
+        ) : orphaned ? (
           <p className="status-hint is-warn">
             Nobody is reading this room. Scan the QR code on the main screen again — and
             check that screen says it is connected.

@@ -16,6 +16,7 @@ import { PUBLISH_INTERVAL_MS } from './constants';
 import { WEDGE_COUNT } from './tilt';
 import { countsFrom } from './tally';
 import { roomWatchState, type WatchState } from './roomWatch';
+import { writeFault } from './writeFault';
 import type { PhoneReading } from './dots';
 
 /** How often the host recomputes and republishes the aggregate every phone reads. */
@@ -26,6 +27,9 @@ const STALE_MS = 6000;
 const WATCH_INTERVAL_MS = 1000;
 /** How long to wait before asking for an identity again after a refused sign-in. */
 const AUTH_RETRY_MS = 3000;
+/** How long writes must keep being refused before the screen says so. One
+    stumble on a wifi handover is not worth a red line on a projector. */
+const FAULT_GRACE_MS = 1500;
 
 const zeros = () => new Array<number>(WEDGE_COUNT).fill(0);
 
@@ -44,6 +48,12 @@ export interface Room {
    * look exactly like a quiet room.
    */
   watch: WatchState;
+  /**
+   * Why the database last refused a write, or null while they are landing. The
+   * silence itself is already visible in `watch`; this is the half that says
+   * what to do about it.
+   */
+  fault: string | null;
   /** one entry per phone -- populated for the host only */
   readings: PhoneReading[];
   /** voters only: report where this phone is pointing right now */
@@ -79,6 +89,7 @@ export function useRoom({ role, roomId }: { role: Role; roomId: string | null })
   const [total, setTotal] = useState(0);
   const [status, setStatus] = useState<RoomStatus>('connecting');
   const [watch, setWatch] = useState<WatchState>('checking');
+  const [fault, setFault] = useState<string | null>(null);
   const [readings, setReadings] = useState<PhoneReading[]>([]);
 
   const pending = useRef<{ heading: number | null; magnitude: number }>({
@@ -94,6 +105,23 @@ export function useRoom({ role, roomId }: { role: Role; roomId: string | null })
   /** When the grace clock last restarted: connect, reconnect, or waking up. Set
       by the effect, never during render -- a clock read is not a pure value. */
   const settledAt = useRef(0);
+  /** How far this device's clock sits from the database's. The rules refuse a
+      timestamp more than five seconds ahead of server time, so a device running
+      fast would have every write rejected and no way to find out why. */
+  const skew = useRef(0);
+  /** When writes started being refused, so a single failure stays quiet. */
+  const faultSince = useRef<number | null>(null);
+
+  const noteWrite = useCallback((error?: unknown) => {
+    if (error === undefined) {
+      faultSince.current = null;
+      setFault(null);
+      return;
+    }
+    const now = Date.now();
+    faultSince.current ??= now;
+    if (now - faultSince.current >= FAULT_GRACE_MS) setFault(writeFault(error));
+  }, []);
 
   useEffect(() => {
     // A different room is a fresh question. Nothing has been heard from it, and
@@ -103,6 +131,8 @@ export function useRoom({ role, roomId }: { role: Role; roomId: string | null })
     socketUp.current = false;
     tallyAt.current = null;
     settledAt.current = Date.now();
+    skew.current = 0;
+    faultSince.current = null;
 
     // No room id means no QR was scanned, so there is nowhere legitimate to
     // write and nothing to read. Stay disconnected rather than guessing a path.
@@ -129,6 +159,16 @@ export function useRoom({ role, roomId }: { role: Role; roomId: string | null })
           if (up) settledAt.current = Date.now();
           socketUp.current = up;
           setStatus(up ? 'live' : 'connecting');
+        }),
+      );
+
+      // The database's own answer to what time it is, rather than a guess. Every
+      // timestamp below is stamped with it, so a wrong clock stops being a
+      // reason for the rules to refuse this screen.
+      cleanups.push(
+        onValue(ref(db, '.info/serverTimeOffset'), (snap) => {
+          const offset = snap.val();
+          if (typeof offset === 'number') skew.current = offset;
         }),
       );
 
@@ -169,7 +209,7 @@ export function useRoom({ role, roomId }: { role: Role; roomId: string | null })
             const { heading, magnitude } = pending.current;
             const wire: Wire = {
               m: Math.round(magnitude * 10) / 10,
-              t: Date.now(),
+              t: Date.now() + skew.current,
             };
             if (heading !== null) wire.h = Math.round(heading * 10) / 10;
 
@@ -180,7 +220,10 @@ export function useRoom({ role, roomId }: { role: Role; roomId: string | null })
             if (sig === last.split('|')[0] && !stale) return;
             last = `${sig}|${Date.now()}`;
 
-            void set(mine, wire);
+            void set(mine, wire).then(
+              () => noteWrite(),
+              (error) => noteWrite(error),
+            );
           }, PUBLISH_INTERVAL_MS),
         );
 
@@ -231,7 +274,12 @@ export function useRoom({ role, roomId }: { role: Role; roomId: string | null })
       // a second.
       let frame = 0;
       const tick = () => {
-        const cutoff = Date.now() - STALE_MS;
+        // Server time on both sides of the comparison. Phones stamp their
+        // positions with it, so ageing them out against this screen's own clock
+        // meant a laptop a few seconds off declared every phone in the room
+        // stale the moment it arrived -- an empty dial in front of a room full
+        // of people holding working phones.
+        const cutoff = Date.now() + skew.current - STALE_MS;
         const next: PhoneReading[] = [];
         for (const [id, r] of live) {
           if (r.t < cutoff) {
@@ -249,7 +297,7 @@ export function useRoom({ role, roomId }: { role: Role; roomId: string | null })
 
       timers.push(
         setInterval(() => {
-          const cutoff = Date.now() - STALE_MS;
+          const cutoff = Date.now() + skew.current - STALE_MS;
           const alive: PhoneReading[] = [];
           for (const [id, r] of live) {
             if (r.t >= cutoff) alive.push({ id, heading: r.heading, magnitude: r.magnitude });
@@ -258,11 +306,18 @@ export function useRoom({ role, roomId }: { role: Role; roomId: string | null })
           // on: if it is accepted, this screen really is serving this room. A
           // rejection used to go straight on the floor, which is how a screen
           // could keep showing a healthy QR code while writing nowhere.
-          void set(tallyRef, { c: countsFrom(alive), n: alive.length, t: Date.now() }).then(
+          void set(tallyRef, {
+            c: countsFrom(alive),
+            n: alive.length,
+            t: Date.now() + skew.current,
+          }).then(
             () => {
               tallyAt.current = Date.now();
+              noteWrite();
             },
-            () => {},
+            // Dropping this was how a screen could know it was not reaching the
+            // room and still have nothing to say about why.
+            (error) => noteWrite(error),
           );
         }, TALLY_INTERVAL_MS),
       );
@@ -295,11 +350,11 @@ export function useRoom({ role, roomId }: { role: Role; roomId: string | null })
       timers.forEach(clearInterval);
       cleanups.forEach((fn) => fn());
     };
-  }, [role, roomId]);
+  }, [role, roomId, noteWrite]);
 
   const publish = useCallback((heading: number | null, magnitude: number) => {
     pending.current = { heading, magnitude };
   }, []);
 
-  return { counts, total, status, watch, readings, publish };
+  return { counts, total, status, watch, fault, readings, publish };
 }

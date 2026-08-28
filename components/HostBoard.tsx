@@ -102,7 +102,10 @@ export function HostBoard() {
                 : room.status !== 'live'
                   ? 'Connecting'
                   : room.watch === 'orphaned'
-                    ? 'Not reaching the room — phones will not be counted'
+                    ? // The database's own reason when it gave one. Tied to
+                      // orphaned rather than shown the instant a write fails, so
+                      // one stumble on a projector does not raise an alarm.
+                      (room.fault ?? 'Not reaching the room — phones will not be counted')
                     : !frozen && room.total === 0
                       ? 'Waiting for the first phone'
                       : `${room.total} ${room.total === 1 ? 'phone' : 'phones'} · ${voted} aiming`}
