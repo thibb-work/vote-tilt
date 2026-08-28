@@ -61,35 +61,35 @@ vercel --prod
 
 ## Which URL the QR points at
 
-**Only `https://vote-tilt.vercel.app` is open to phones.** The project has Vercel
-Authentication switched on (`ssoProtection: all_except_custom_domains`), so all
-three of its other addresses turn a stranger away:
+**All four of this project's addresses are open to phones.** Vercel Authentication
+was switched off on 2026-08-28; before that it walled every URL except the
+production alias, and a host who opened the app from the Vercel dashboard --
+which always links the deployment URL -- minted a code that landed the whole
+room on a sign-in page. The laptop carried the Vercel session cookie, so the
+projector looked perfect while nobody could join.
 
-| URL | What a phone gets |
-|---|---|
-| `vote-tilt.vercel.app` | the vote |
-| `vote-tilt-thibblab.vercel.app` | 302 → `vercel.com/sso-api` |
-| `vote-tilt-git-main-thibblab.vercel.app` | 302 → `vercel.com/sso-api` |
-| `vote-tilt-<hash>-thibblab.vercel.app` | 302 → `vercel.com/sso-api` |
+The guard against that is still in the code and costs nothing when there is
+nothing to guard against: `QrPanel` asks, without credentials, whether a stranger
+can open the origin it is about to encode. When the answer is yes -- which is now
+every URL here -- it encodes that origin, so previews stay testable by scanning.
+When the answer is no it falls back to `NEXT_PUBLIC_JOIN_ORIGIN`, and when there
+is no fallback it says so rather than showing a code that scans cleanly and
+strands the room.
 
-The host laptop carries the Vercel session cookie, so a walled URL looks perfect
-on the projector while every phone in the room hits a sign-in page. That is the
-failure this guards against: `QrPanel` asks, without credentials, whether a
-stranger can open the origin it is about to encode, and falls back to
-`NEXT_PUBLIC_JOIN_ORIGIN` when the answer is no. When there is no fallback it
-says so instead of showing a code that scans cleanly and strands the room.
-
-Two things worth doing:
-
-- **Open the host screen on `vote-tilt.vercel.app/host`**, not on the deployment
-  URL the Vercel dashboard links to. Then the code needs no fallback at all.
-- **Consider turning Vercel Authentication off** for this project. It is a public
-  audience poll; the protection buys nothing here and it is what makes preview
-  deployments impossible to test by scanning.
+That matters again the moment this moves behind a password, a custom domain, or
+a host that is not Vercel. Turning protection back on needs no code change.
 
 `NEXT_PUBLIC_JOIN_ORIGIN` is filled from `VERCEL_PROJECT_PRODUCTION_URL` at build
 time, which needs "Automatically expose System Environment Variables" left on
 (it is on by default). Set it by hand for a custom domain or a non-Vercel host.
+
+**One consequence of switching protection off:** `/host` is now reachable on every
+preview deployment, and they all share one `HOST_PASSCODE` and one
+`sessions/main`. A stale preview URL is a working door to Freeze and Reset on the
+live round. The passcode is the only thing behind it -- `lib/rateLimit.ts` caps
+guesses at 8 a minute per address, but it is in-memory and per instance, so it
+raises the cost rather than closing the door. Keep the passcode long and random;
+`scripts/rotate-secrets.sh` mints one.
 
 ## Network warning
 
