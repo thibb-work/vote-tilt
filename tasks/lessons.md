@@ -155,3 +155,34 @@ Rule: instrument the whole path first and read off which term dominates. It also
 tells you when to stop, and when the dominant term has moved somewhere new --
 here it moved to the phone's smoothing filter, which no amount of further work
 on the network or the easing would have touched.
+
+## An empty rejection handler is a silence you will pay for twice
+
+`set(...).then(ok, () => {})` was written to stop an unhandled rejection. What
+it actually did was throw away the only evidence of why the write failed, and
+the app already had four faults that presented as the same silence. Two rounds
+went into guessing what a single `PERMISSION_DENIED` would have said outright.
+
+Rule: never discard a rejection to quiet a warning. If a failure is not worth
+showing, record why it happened anyway; the cost of a swallowed reason is a
+whole round of investigation, and it is paid by whoever is standing at the
+projector.
+
+## Timestamps in a shared database belong to the server
+
+Two independent bugs, one cause: the rules validate `t` against server time,
+and phones are aged out against the reader's `Date.now()`. Both meant a browser
+whose clock was off failed silently -- one refusing every write, the other
+declaring a room full of healthy phones stale on arrival.
+
+Rule: when a value is compared across machines, both sides use the same clock.
+RTDB hands it over on `.info/serverTimeOffset`; there is no reason to guess.
+
+## Truncate a log before you re-run into it
+
+A poll waiting for `passed` matched the *previous* run's output twice, and a fix
+that worked the first time looked like it had failed. The rig was lying, not the
+code.
+
+Rule: delete the output file before the run that writes it, or poll on
+something the previous run could not have produced.

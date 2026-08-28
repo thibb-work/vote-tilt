@@ -532,3 +532,54 @@ Tripling the publish rate is not close to a limit. `TALLY_INTERVAL_MS` stays at
 host's own numbers never come from it -- they are folded locally, every frame.
 
 Still not done: `HOST_PASSCODE` is unrotated.
+
+## Round four (2026-08-28): "not connected" in Brave, not in incognito
+
+The host screen showed *This screen is not connected* in a normal Brave window.
+The app could not say why, which is the actual defect this round fixed: the
+tally write's rejection went into an empty handler, so four different faults all
+came out as the same silence.
+
+**Ruled out, each with evidence rather than an argument.**
+
+- CSP: `connect-src` allows `https://*.googleapis.com`, which covers both
+  `identitytoolkit` (sign-in) and `securetoken` (token refresh). Read off the
+  deployed headers.
+- A session that already exists -- the one thing a normal window has and
+  incognito does not. `test/e2e/returning.mjs` reloads one context five times
+  with a saved room id and a live Firebase session: 15/15, no refused requests,
+  no console errors.
+- A stale room id from before the format changed: `hostRoomIdSnapshot` already
+  validates with `isRoomId` and mints a fresh one, so it self-heals.
+- Brave's default blocking: EasyPrivacy has 21 rules matching `googleapis.com`
+  and none of them touch `identitytoolkit`, `securetoken`, `*.firebaseio.com` or
+  `*.firebasedatabase.app`. The Firebase hosts it does block are logging,
+  analytics and performance, none of which this app imports.
+
+**Fixed anyway, because both were real.**
+
+- [x] writes carry server time from `.info/serverTimeOffset`, not the browser's
+      clock. The rules refuse a stamp more than 5s ahead of the server, so a
+      wrong clock failed every write, completely and invisibly.
+- [x] phones are aged out against server time too. Same fault from the other
+      side: a host a few seconds fast dropped every phone the instant it
+      arrived -- QR code up, phones connected and happy, empty dial.
+- [x] a refused write names itself on both screens, after 1.5s so one wifi
+      stumble stays quiet
+- [x] the phone needed its own path for that: its writes being refused leaves
+      the socket up and the host answering, so the orphan warning never fires
+      and nothing at all would have shown
+
+`test/e2e/clock.mjs` runs a host ten minutes fast, and failed on exactly the
+ageing bug before the fix:
+
+    PASS  a host 10 minutes fast still serves the room
+    PASS  a phone joining it is counted  -- 1 phone · 1 aiming
+    PASS  a phone ten minutes fast is counted too  -- 2 phones · 2 aiming
+
+6/6 clock, 12/12 host-recovery, 19/19 orphan, 15/15 returning, 99/99 unit.
+
+**Still open.** Brave itself is off limits to automation, so the last step needs
+one look at the host status line, which now separates every remaining cause.
+
+Still not done: `HOST_PASSCODE` is unrotated.
