@@ -471,3 +471,64 @@ build clean.
 Still not done: `HOST_PASSCODE` is unrotated, and since Vercel Authentication
 came off it is the only wall in front of Freeze and Reset on every deployment
 URL. `scripts/rotate-secrets.sh` mints one.
+
+## Round three (2026-08-28): why the host dial got sluggish
+
+Not a bug -- a constant that outlived its reason. Positions used to ride
+Supabase Realtime Presence, whose free tier caps out around twenty messages a
+second, so the RTDB migration in `4e6ee2d` slowed phones from publishing every
+120ms to every 300ms and set the dot easing to 280ms to match. RTDB has no such
+cap, and the database sits in europe-west1, but the throttle travelled with the
+code.
+
+**Measured first.** `test/e2e/latency.mjs` steps a real phone between two
+opposite tilts and times the host dot, both pages in one browser so the clock is
+shared. Median of eleven steps, before:
+
+    dot starts moving  287ms
+    dot has arrived    561ms
+
+`settled - first move` was 275ms in every single round, which is the CSS
+transition to the millisecond. Network was never the problem: a TCP round trip
+to europe-west1 measures 15ms, about 5% of the budget.
+
+- [x] `PUBLISH_INTERVAL_MS` 300 -> 100, moved to `lib/constants.ts`
+- [x] the dot easing reads it as `--dot-travel` instead of keeping a second copy
+      that can drift out of step with the cadence it is tuned to
+- [x] the tilt filter relaxes with sustained travel, so a swing is not smoothed
+      as hard as a wobble
+
+The third one is where the remaining time had moved. A single smoothing weight
+has to hide three degrees of sensor noise *and* keep up with an arm sweeping the
+dial; tuned for the first it costs a third of a second on the second. Smoothing
+the *signed* change separates them -- noise is zero-mean and cancels, real
+movement pushes the same way sample after sample and accumulates.
+
+**Proof.** Same harness, same eleven steps, after:
+
+    dot starts moving   72ms   (4.0x)
+    dot has arrived    263ms   (2.1x)
+
+And the filter change costs nothing at rest, which is the half that could have
+gone wrong. On identical noise, held still:
+
+    unfiltered        wanders 8.0 deg
+    fixed 0.2         wanders 4.8 deg
+    adaptive          wanders 4.8 deg     <- unchanged
+    60 deg sweep      16.7 deg behind the hand -> 1.6 deg
+
+96/96 unit including two new filter tests, 12/12 host-recovery, 19/19 orphan,
+lint and build clean.
+
+**What the room actually costs.** Measured off the host's websocket frames, not
+estimated: 1.5 KB/s per phone at 14 frames/s. The project is on the free Spark
+plan, so downloaded bytes are the ceiling -- 10 GB/month.
+
+    10 phones -> ~55 MB/hour   -> 183 hours of a full room
+    30 phones -> ~164 MB/hour  ->  61 hours of a full room
+
+Tripling the publish rate is not close to a limit. `TALLY_INTERVAL_MS` stays at
+250ms deliberately: it is the one fan-out that multiplies by room size, and the
+host's own numbers never come from it -- they are folded locally, every frame.
+
+Still not done: `HOST_PASSCODE` is unrotated.

@@ -16,6 +16,30 @@ export const DEAD_ZONE_RELEASE_DEG = 10;
 export const HYSTERESIS_DEG = 8;
 /** Exponential smoothing weight on new samples. Raw sensor data jitters ~3 deg at rest. */
 export const SMOOTHING = 0.2;
+/**
+ * Smoothing weight once the phone is unmistakably being swung rather than held.
+ *
+ * A single fixed weight has to serve two opposite jobs: hide three degrees of
+ * sensor noise in a hand that is trying to stay still, and keep up with an arm
+ * deliberately sweeping the dial. Tuned for the first, it costs about a third of
+ * a second to catch up with the second -- which is most of the delay left
+ * between a phone moving and its dot arriving on the host screen.
+ */
+export const SMOOTHING_FAST = 0.6;
+/**
+ * How much sustained travel per sample, in degrees, relaxes the filter fully.
+ *
+ * Sustained is the operative word. Noise is zero-mean, so smoothing the signed
+ * change cancels it out, while real movement pushes the same way sample after
+ * sample and accumulates. That is what separates a wobble from a swing -- the
+ * two are the same size instant to instant.
+ */
+export const FAST_DEG_PER_SAMPLE = 3;
+/** Travel this small is taken to be noise and buys no relaxation at all. */
+export const JITTER_DEG_PER_SAMPLE = 1.5;
+/** Weight on the travel estimate itself. Lower than SMOOTHING: it is the thing
+    doing the noise cancelling, so it has to be quieter than what it measures. */
+export const TRAVEL_SMOOTHING = 0.25;
 
 export interface Orientation {
   /** front-back tilt, -180..180 */
@@ -62,11 +86,15 @@ export function createTiltTracker(): TiltTracker {
   let sBeta: number | null = null;
   let sGamma: number | null = null;
   let wedge: number | null = null;
+  // Signed, so a hand shaking about a fixed point averages back to nothing.
+  let travelBeta = 0;
+  let travelGamma = 0;
 
   return {
     reset() {
       sBeta = sGamma = null;
       wedge = null;
+      travelBeta = travelGamma = 0;
     },
 
     update({ beta, gamma }: Orientation): TiltReading {
@@ -76,8 +104,26 @@ export function createTiltTracker(): TiltTracker {
 
       // Low-pass filter. First sample seeds the filter rather than easing into it
       // from zero, otherwise the dial visibly slides in from the centre on load.
-      sBeta = sBeta === null ? beta : sBeta + (beta - sBeta) * SMOOTHING;
-      sGamma = sGamma === null ? gamma : sGamma + (gamma - sGamma) * SMOOTHING;
+      if (sBeta === null || sGamma === null) {
+        sBeta = beta;
+        sGamma = gamma;
+      } else {
+        const dBeta = beta - sBeta;
+        const dGamma = gamma - sGamma;
+
+        // How far the phone has been travelling, not how far it just jumped.
+        travelBeta += (dBeta - travelBeta) * TRAVEL_SMOOTHING;
+        travelGamma += (dGamma - travelGamma) * TRAVEL_SMOOTHING;
+
+        // Relax the filter in proportion to that, past a floor that noise on its
+        // own cannot clear. Held still, this is SMOOTHING and nothing changes.
+        const excess = Math.max(0, Math.hypot(travelBeta, travelGamma) - JITTER_DEG_PER_SAMPLE);
+        const alpha =
+          SMOOTHING + (SMOOTHING_FAST - SMOOTHING) * Math.min(1, excess / FAST_DEG_PER_SAMPLE);
+
+        sBeta += dBeta * alpha;
+        sGamma += dGamma * alpha;
+      }
 
       const magnitude = Math.min(90, Math.hypot(sGamma, sBeta));
 

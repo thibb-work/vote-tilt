@@ -1,7 +1,8 @@
 'use client';
 
+import type { CSSProperties } from 'react';
 import { polar, sectorPath, wrapLabel } from '@/lib/geometry';
-import { WEDGE_COLORS } from '@/lib/constants';
+import { PUBLISH_INTERVAL_MS, WEDGE_COLORS } from '@/lib/constants';
 import { WEDGE_COUNT, WEDGE_DEG } from '@/lib/tilt';
 import { fillFor, needsLightText } from '@/lib/density';
 import { dotsFor, type PhoneReading } from '@/lib/dots';
@@ -143,7 +144,11 @@ export function Dial({
       </text>
 
       {readings && readings.length > 0 && (
-        <g className="dots">
+        // Dots ease over exactly one publish interval, so they are still
+        // travelling when the next position lands and the room reads a moving
+        // crowd rather than a strobe. Passed down rather than hardcoded in the
+        // stylesheet: the two numbers are one decision.
+        <g className="dots" style={{ '--dot-travel': `${PUBLISH_INTERVAL_MS}ms` } as CSSProperties}>
           {dotsFor(readings, CX, CY, R_INNER, R_OUTER - 16).map((d) => (
             <circle
               key={d.id}

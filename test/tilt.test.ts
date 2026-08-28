@@ -75,3 +75,60 @@ test('a border-parked phone does not oscillate', () => {
   }
   assert.deepEqual([...seen], [0], `wedge flickered: ${[...seen].join(',')}`);
 });
+
+/**
+ * A deterministic stand-in for sensor noise. Real jitter is random; a fixed
+ * pseudo-random sequence keeps the test from failing once a fortnight while
+ * still being the zero-mean wobble the adaptive filter has to ignore.
+ */
+function noise(seed: number) {
+  let s = seed >>> 0;
+  return () => {
+    s = (s * 1664525 + 1013904223) >>> 0;
+    return (s / 0x100000000) * 2 - 1;
+  };
+}
+
+test('a held phone stays put through three degrees of sensor noise', () => {
+  const t = createTiltTracker();
+  settle(t, 0, 45);
+  const rnd = noise(7);
+  const headings: number[] = [];
+  for (let i = 0; i < 300; i++) {
+    const r = t.update({ beta: -45 + rnd() * 3, gamma: 0 + rnd() * 3 });
+    if (r.heading !== null) headings.push(r.heading);
+  }
+  // The dot must not visibly crawl. Relaxing the filter on noise alone would
+  // show up here as several degrees of swing at the tip of the needle. Measured
+  // as signed offsets from the first reading, because a phone held at heading 0
+  // straddles the wrap and raw min/max would call that a 360 degree wander.
+  const offsets = headings.map((h) => angleDelta(h, headings[0]));
+  const spread = Math.max(...offsets) - Math.min(...offsets);
+  // The bar is the filter this one replaced: on this exact input a flat 0.2
+  // weight also wandered 4.8 deg, and no filter at all wandered 8.0. Relaxing on
+  // speed is only allowed to buy tracking, never to sell steadiness back.
+  assert.ok(spread < 5, `held phone wandered ${spread.toFixed(1)} deg`);
+});
+
+test('a swung phone catches up faster than a held one is allowed to', () => {
+  // A deliberate sweep: 60 degrees of heading over ten samples, a sixth of a
+  // second on a 60Hz handset.
+  const sweep = (t: ReturnType<typeof createTiltTracker>) => {
+    for (let i = 1; i <= 10; i++) {
+      const h = (60 * i) / 10;
+      const rad = (h * Math.PI) / 180;
+      t.update({ beta: -45 * Math.cos(rad), gamma: 45 * Math.sin(rad) });
+    }
+    return t.update({ beta: -45 * Math.cos(Math.PI / 3), gamma: 45 * Math.sin(Math.PI / 3) });
+  };
+
+  const t = createTiltTracker();
+  settle(t, 0, 45);
+  const after = sweep(t);
+
+  // Fixed 0.2 smoothing reaches about 70% of a step in eleven samples, which on
+  // a 60 degree sweep leaves the dot some 18 degrees behind the hand.
+  assert.ok(after.heading !== null);
+  const behind = Math.abs(angleDelta(after.heading, 60));
+  assert.ok(behind < 8, `dot lagged the sweep by ${behind.toFixed(1)} deg`);
+});

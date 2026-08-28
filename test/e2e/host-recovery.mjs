@@ -72,7 +72,9 @@ await host.fill('input.field', ENV.HOST_PASSCODE);
 await host.click('button[type=submit]');
 await host.waitForSelector('.tally-head', { timeout: 20000 });
 
-check('the host screen still renders with no identity', await qrShown(host));
+// Polled, not sampled: the code is encoded asynchronously, so it appears a
+// beat after .tally-head does and a bare check here is a coin toss.
+check('the host screen still renders with no identity', await until(() => qrShown(host)));
 check(
   'THE BUG: it says it cannot sign in, instead of "Connecting" forever',
   await until(async () => (await hostLine(host)).includes('Cannot sign in')),

@@ -131,3 +131,27 @@ The cause was found by listing `/rooms` with an admin token and noticing one
 room with live phone writes and no tally node, ever. That one query eliminated
 rules, clock skew, CSP, room-id drift and deployment split -- each of which had
 a plausible story and would have taken a browser session to test.
+
+## A constant outlives the transport it was tuned for
+
+The dial felt slow because phones published every 300ms. That number was chosen
+for Supabase Realtime Presence, a transport this app stopped using in the same
+commit that introduced the number. Nothing was wrong with the code; the reason
+for it had simply been deleted around it.
+
+Rule: when a migration carries a tuning constant across, say in the comment
+which system it was tuned for. A number with no live justification reads as
+deliberate forever, and "it was always like that" is not a measurement.
+
+## Measure the budget before optimising any part of it
+
+Three plausible culprits for the sluggish dial: the network, the publish rate,
+the easing. Timing a real tilt end to end settled it in one run --
+`settled - first move` came out at 275ms in every round, which was the CSS
+transition exactly, and a round trip to the database measured 15ms. The network,
+the obvious suspect, was 5% of the budget.
+
+Rule: instrument the whole path first and read off which term dominates. It also
+tells you when to stop, and when the dominant term has moved somewhere new --
+here it moved to the phone's smoothing filter, which no amount of further work
+on the network or the easing would have touched.

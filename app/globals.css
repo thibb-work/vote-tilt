@@ -305,9 +305,13 @@ body {
 }
 
 /* Dots ease between published positions rather than teleporting, so thirty
-   phones read as a moving crowd instead of a strobing scatter. */
+   phones read as a moving crowd instead of a strobing scatter. The duration is
+   one publish interval, handed down from PUBLISH_INTERVAL_MS by Dial.tsx: any
+   longer and the ease is pure lag, any shorter and the dot arrives early and
+   sits waiting. The fallback matches the constant. */
 .dot-phone {
-  transition: cx 0.28s linear, cy 0.28s linear, r 0.2s ease, fill 0.3s ease;
+  transition: cx var(--dot-travel, 100ms) linear, cy var(--dot-travel, 100ms) linear,
+    r 0.2s ease, fill 0.3s ease;
 }
 
 @media (prefers-reduced-motion: reduce) {

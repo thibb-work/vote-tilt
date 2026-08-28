@@ -12,13 +12,12 @@ import {
   set,
 } from 'firebase/database';
 import { roomAuth, roomDb } from './firebase/client';
+import { PUBLISH_INTERVAL_MS } from './constants';
 import { WEDGE_COUNT } from './tilt';
 import { countsFrom } from './tally';
 import { roomWatchState, type WatchState } from './roomWatch';
 import type { PhoneReading } from './dots';
 
-/** How often a phone republishes its position. Thirty phones at this rate was clean in load testing. */
-const PUBLISH_INTERVAL_MS = 300;
 /** How often the host recomputes and republishes the aggregate every phone reads. */
 const TALLY_INTERVAL_MS = 250;
 /** A phone whose last write is older than this is treated as gone. */
